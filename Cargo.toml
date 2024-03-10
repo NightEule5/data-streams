@@ -1,0 +1,18 @@
+[package]
+name = "data-streams"
+version = "1.0.0"
+edition = "2021"
+authors = ["NightEule5 <24661563+NightEule5@users.noreply.github.com>"]
+description = "Extension traits for reading and writing data with streams."
+keywords = ["io"]
+license = "Apache-2.0"
+homepage = "https://github.com/NightEule5/data-streams/"
+repository = "https://github.com/NightEule5/data-streams/"
+
+[features]
+
+[dependencies]
+bytemuck = "1.14.3"
+num-traits = { version = "0.2.18", features = ["i128"] }
+simdutf8 = "0.1.4"
+thiserror = "1.0.57"
