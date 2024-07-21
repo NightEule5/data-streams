@@ -31,8 +31,8 @@ pub enum Error {
 	},
 }
 
-impl std::error::Error for Error {
-	fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+impl core::error::Error for Error {
+	fn source(&self) -> Option<&(dyn core::error::Error + 'static)> {
 		match self {
 			#[cfg(feature = "std")]
 			Self::Io(error) => Some(error),
@@ -69,7 +69,7 @@ impl From<Utf8Error> for Error {
 	}
 }
 
-pub type Result<T = (), E = Error> = std::result::Result<T, E>;
+pub type Result<T = (), E = Error> = core::result::Result<T, E>;
 
 /// A source stream of data.
 pub trait DataSource {
