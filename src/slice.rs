@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use alloc::string::String;
 use simdutf8::compat::from_utf8;
 use crate::{DataSource, Result};
 

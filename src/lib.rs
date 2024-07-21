@@ -1,21 +1,66 @@
 // SPDX-License-Identifier: Apache-2.0
 
+#![cfg_attr(not(feature = "std"), no_std)]
+
+#[cfg(not(feature = "std"))]
+extern crate core as std;
+#[cfg(not(feature = "std"))]
+extern crate alloc;
+
 mod slice;
 mod std_io;
 
+#[cfg(not(feature = "std"))]
+use alloc::{string::String, vec::Vec};
+use std::fmt;
+#[cfg(feature = "std")]
 use std::io;
 use bytemuck::{bytes_of, bytes_of_mut, Pod};
 use num_traits::PrimInt;
 
-#[derive(Debug, thiserror::Error)]
-#[error(transparent)]
+#[derive(Debug)]
 pub enum Error {
-	Io(#[from] io::Error),
-	#[error("premature end-of-stream when reading {required_count} bytes")]
+	#[cfg(feature = "std")]
+	Io(io::Error),
+	Utf8(simdutf8::compat::Utf8Error),
 	End {
 		required_count: usize
 	},
-	Utf8(#[from] simdutf8::compat::Utf8Error),
+}
+
+impl std::error::Error for Error {
+	fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+		match self {
+			#[cfg(feature = "std")]
+			Self::Io(error) => Some(error),
+			Self::Utf8(error) => Some(error),
+			Self::End { .. } => None,
+		}
+	}
+}
+
+impl fmt::Display for Error {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		match self {
+			#[cfg(feature = "std")]
+			Self::Io(error) => fmt::Display::fmt(error, f),
+			Self::Utf8(error) => fmt::Display::fmt(error, f),
+			Self::End { required_count } => write!(f, "premature end-of-stream when reading {required_count} bytes"),
+		}
+	}
+}
+
+#[cfg(feature = "std")]
+impl From<io::Error> for Error {
+	fn from(value: io::Error) -> Self {
+		Self::Io(value)
+	}
+}
+
+impl From<simdutf8::compat::Utf8Error> for Error {
+	fn from(value: simdutf8::compat::Utf8Error) -> Self {
+		Self::Utf8(value)
+	}
 }
 
 pub type Result<T = (), E = Error> = std::result::Result<T, E>;

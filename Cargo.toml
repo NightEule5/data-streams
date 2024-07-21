@@ -10,9 +10,10 @@ homepage = "https://github.com/NightEule5/data-streams/"
 repository = "https://github.com/NightEule5/data-streams/"
 
 [features]
+default = ["std"]
+std = []
 
 [dependencies]
 bytemuck = "1.14.3"
 num-traits = { version = "0.2.18", features = ["i128"] }
 simdutf8 = "0.1.4"
-thiserror = "1.0.57"

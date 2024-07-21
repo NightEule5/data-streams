@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+#![cfg(feature = "std")]
+
 use std::io::{BufRead, BufReader, BufWriter, ErrorKind, Read, Write};
 use crate::{DataSink, DataSource, Result};
 
