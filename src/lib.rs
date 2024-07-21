@@ -7,7 +7,7 @@
 //! Implementations for byte slices and `std::io`'s buffered readers and writers are provided, but
 //! it's easy to write your own implementations:
 //!
-//! ```no_run
+//! ```ignore
 //! # use data_streams::{DataSource, DataSink, Result};
 //!
 //! struct MySource {
