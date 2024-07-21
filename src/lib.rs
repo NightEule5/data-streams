@@ -1,5 +1,59 @@
 // SPDX-License-Identifier: Apache-2.0
 
+//! This crate provides stream traits for conveniently read and writing many data types: bytes,
+//! little or big-endian integers, and UTF-8 strings. [`DataSource`] reads from a stream, [`DataSink`]
+//! writes to a stream.
+//!
+//! Implementations for byte slices and `std::io`'s buffered readers and writers are provided, but
+//! it's easy to write your own implementations:
+//!
+//! ```no_run
+//! # use data_streams::{DataSource, DataSink, Result};
+//!
+//! struct MySource {
+//!     buffer: Vec<u8>,
+//!     // ...
+//! }
+//!
+//! impl DataSource for MySource {
+//!     fn available(&self) -> usize {
+//!         self.buffer.len()
+//!     }
+//!
+//!     fn request(&mut self, count: usize) -> Result<bool> {
+//!         if self.available() < count {
+//!             // Fill the buffer...
+//!         }
+//!
+//!         Ok(self.available() >= count)
+//!     }
+//!
+//!     fn read_bytes<'a>(&mut self, buf: &'a mut [u8]) -> Result<&'a [u8]> {
+//!         let count = self.available().min(buf.len());
+//!         buf[..count].copy_from_slice(&self.buffer);
+//!         self.buffer.drain(..count);
+//!         Ok(&buf[..count])
+//!     }
+//!
+//!     fn read_utf8_to_end<'a>(&mut self, buf: &'a mut String) -> Result<&'a str> {
+//!         self.read_utf8(self.available(), buf)
+//!     }
+//! }
+//!
+//! struct MySink {
+//!     buffer: Vec<u8>,
+//!     // ...
+//! }
+//!
+//! impl DataSink for MySink {
+//!     fn write_bytes(&mut self, buf: &[u8]) -> Result {
+//!         self.buffer.extend_from_slice(buf);
+//!         // Flush the buffer?
+//!         Ok(())
+//!     }
+//! }
+//! ```
+
 #![cfg_attr(not(feature = "std"), no_std)]
 
 #[cfg(not(feature = "std"))]
