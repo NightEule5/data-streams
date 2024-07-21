@@ -1,6 +1,6 @@
 [package]
 name = "data-streams"
-version = "1.0.0"
+version = "1.1.0"
 edition = "2021"
 authors = ["NightEule5 <24661563+NightEule5@users.noreply.github.com>"]
 description = "Extension traits for reading and writing data with streams."
@@ -15,6 +15,6 @@ std = ["num-traits/std", "simdutf8/std"]
 alloc = ["simdutf8"]
 
 [dependencies]
-bytemuck = "1.14.3"
-num-traits = { version = "0.2.18", features = ["i128"] }
+bytemuck = "1.16.1"
+num-traits = { version = "0.2.19", features = ["i128"] }
 simdutf8 = { version = "0.1.4", optional = true }
