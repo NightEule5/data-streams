@@ -37,6 +37,7 @@ impl<R: Read + ?Sized> DataSource for BufReader<R> {
 		Ok(buf)
 	}
 
+	#[cfg(feature = "alloc")]
 	fn read_utf8_to_end<'a>(&mut self, buf: &'a mut String) -> Result<&'a str> {
 		unsafe {
 			super::append_utf8(buf, |b|
