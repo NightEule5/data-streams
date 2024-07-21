@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
+#[cfg(feature = "alloc")]
+use alloc::string::String;
+#[cfg(feature = "alloc")]
 use simdutf8::compat::from_utf8;
 use crate::{DataSource, Result};
 
@@ -18,6 +21,7 @@ impl DataSource for &[u8] {
 		Ok(&buf[..len])
 	}
 
+	#[cfg(feature = "alloc")]
 	fn read_utf8<'a>(&mut self, mut count: usize, buf: &'a mut String) -> Result<&'a str> {
 		count = count.min(self.len());
 		let result = from_utf8(&self[..count]);
@@ -27,6 +31,7 @@ impl DataSource for &[u8] {
 		Ok(&buf[start..])
 	}
 
+	#[cfg(feature = "alloc")]
 	fn read_utf8_to_end<'a>(&mut self, buf: &'a mut String) -> Result<&'a str> {
 		self.read_utf8(self.len(), buf)
 	}

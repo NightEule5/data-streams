@@ -26,3 +26,10 @@ fn write(source: &mut impl DataSink) -> Result<()> {
 	source.write_bytes(&[1, 2, 3, 4, 5])?;
 }
 ```
+
+## `no_std` Support
+
+This crate supports `no_std` and environments without `alloc`. These are toggled by the `std` and
+`alloc` features respectively. `no_std` allows use in embedded environments, at the expense of lost
+implementations for types that would be provided by `std::io`. Disabling `alloc` removes reading
+UTF-8 into owned strings.

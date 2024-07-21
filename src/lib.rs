@@ -1,30 +1,82 @@
 // SPDX-License-Identifier: Apache-2.0
 
+#![cfg_attr(not(feature = "std"), no_std)]
+
+#[cfg(not(feature = "std"))]
+extern crate core;
+#[cfg(feature = "alloc")]
+extern crate alloc;
+
 mod slice;
 mod std_io;
 
+#[cfg(feature = "alloc")]
+use alloc::{string::String, vec::Vec};
+use core::fmt;
+#[cfg(feature = "std")]
 use std::io;
 use bytemuck::{bytes_of, bytes_of_mut, Pod};
 use num_traits::PrimInt;
+#[cfg(feature = "alloc")]
+use simdutf8::compat::Utf8Error;
 
-#[derive(Debug, thiserror::Error)]
-#[error(transparent)]
+#[derive(Debug)]
 pub enum Error {
-	Io(#[from] io::Error),
-	#[error("premature end-of-stream when reading {required_count} bytes")]
+	#[cfg(feature = "std")]
+	Io(io::Error),
+	#[cfg(feature = "alloc")]
+	Utf8(Utf8Error),
 	End {
 		required_count: usize
 	},
-	Utf8(#[from] simdutf8::compat::Utf8Error),
 }
 
-pub type Result<T = (), E = Error> = std::result::Result<T, E>;
+#[cfg(feature = "std")]
+impl std::error::Error for Error {
+	fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+		match self {
+			#[cfg(feature = "std")]
+			Self::Io(error) => Some(error),
+			#[cfg(feature = "alloc")]
+			Self::Utf8(error) => Some(error),
+			Self::End { .. } => None,
+		}
+	}
+}
+
+impl fmt::Display for Error {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		match self {
+			#[cfg(feature = "std")]
+			Self::Io(error) => fmt::Display::fmt(error, f),
+			#[cfg(feature = "alloc")]
+			Self::Utf8(error) => fmt::Display::fmt(error, f),
+			Self::End { required_count } => write!(f, "premature end-of-stream when reading {required_count} bytes"),
+		}
+	}
+}
+
+#[cfg(feature = "std")]
+impl From<io::Error> for Error {
+	fn from(value: io::Error) -> Self {
+		Self::Io(value)
+	}
+}
+
+#[cfg(feature = "alloc")]
+impl From<Utf8Error> for Error {
+	fn from(value: Utf8Error) -> Self {
+		Self::Utf8(value)
+	}
+}
+
+pub type Result<T = (), E = Error> = core::result::Result<T, E>;
 
 /// A source stream of data.
 pub trait DataSource {
 	/// Returns the number of bytes available for reading.
 	fn available(&self) -> usize;
-	/// Reads at most `count` bytes into an internal buffer, returning the whether
+	/// Reads at most `count` bytes into an internal buffer, returning whether
 	/// enough bytes are available. To return an end-of-stream error, use [`require`]
 	/// instead.
 	///
@@ -143,6 +195,7 @@ pub trait DataSource {
 	/// If invalid bytes are encountered, an error is returned and `buf` is unchanged.
 	/// In this case, the stream is left in a state with up to `count` bytes consumed
 	/// from it, including the invalid bytes and any subsequent bytes.
+	#[cfg(feature = "alloc")]
 	fn read_utf8<'a>(&mut self, count: usize, buf: &'a mut String) -> Result<&'a str> {
 		buf.reserve(count);
 		unsafe {
@@ -159,13 +212,14 @@ pub trait DataSource {
 	/// string read. If invalid bytes are encountered, an error is returned and
 	/// `buf` is unchanged. In this case, the stream is left in a state with an
 	/// undefined number of bytes read.
+	#[cfg(feature = "alloc")]
 	fn read_utf8_to_end<'a>(&mut self, buf: &'a mut String) -> Result<&'a str>;
 }
 
 pub trait DataSink {
 	/// Writes all bytes from `buf`. Equivalent to [`Write::write_all`].
 	/// 
-	/// [`Write::write_all`]: std::io::Write::write_all
+	/// [`Write::write_all`]: io::Write::write_all
 	fn write_bytes(&mut self, buf: &[u8]) -> Result;
 
 	/// Writes a [`u8`].
@@ -243,6 +297,7 @@ pub trait DataSink {
 	}
 }
 
+#[cfg(feature = "alloc")]
 unsafe fn append_utf8<R>(buf: &mut String, read: R) -> Result<&str>
 where
 	R: FnOnce(&mut Vec<u8>) -> Result<usize> {

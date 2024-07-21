@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+#![cfg(feature = "std")]
+
 use std::io::{BufRead, BufReader, BufWriter, ErrorKind, Read, Write};
 use crate::{DataSink, DataSource, Result};
 
@@ -35,6 +37,7 @@ impl<R: Read + ?Sized> DataSource for BufReader<R> {
 		Ok(buf)
 	}
 
+	#[cfg(feature = "alloc")]
 	fn read_utf8_to_end<'a>(&mut self, buf: &'a mut String) -> Result<&'a str> {
 		unsafe {
 			super::append_utf8(buf, |b|
