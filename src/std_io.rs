@@ -3,7 +3,9 @@
 #![cfg(feature = "std")]
 
 use std::io::{BufRead, BufReader, BufWriter, ErrorKind, Read, Write};
-use crate::{DataSink, DataSource, Result};
+use crate::Result;
+use crate::sink::DataSink;
+use crate::source::DataSource;
 
 impl<R: Read + ?Sized> DataSource for BufReader<R> {
 	fn available(&self) -> usize {

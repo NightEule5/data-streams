@@ -4,7 +4,8 @@
 use alloc::string::String;
 #[cfg(feature = "alloc")]
 use simdutf8::compat::from_utf8;
-use crate::{DataSource, Result};
+use crate::Result;
+use crate::source::DataSource;
 
 impl DataSource for &[u8] {
 	#[inline(always)]
