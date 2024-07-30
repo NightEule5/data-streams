@@ -55,6 +55,8 @@
 //! ```
 
 #![cfg_attr(not(feature = "std"), no_std)]
+#![cfg_attr(feature = "nightly_specialization", feature(specialization))]
+#![allow(incomplete_features)]
 
 #[cfg(not(feature = "std"))]
 extern crate core;
@@ -74,7 +76,7 @@ use std::io;
 #[cfg(feature = "alloc")]
 use simdutf8::compat::Utf8Error;
 pub use sink::DataSink;
-pub use source::DataSource;
+pub use source::{DataSource, BufferAccess};
 
 #[derive(Debug)]
 pub enum Error {

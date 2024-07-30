@@ -1,13 +1,17 @@
 // Copyright 2024 - Strixpyrr
 // SPDX-License-Identifier: Apache-2.0
 
-use bytemuck::{bytes_of_mut, Pod, Zeroable};
+#[cfg(feature = "alloc")]
+use alloc::string::String;
+use bytemuck::{bytes_of_mut, Pod};
 use num_traits::PrimInt;
 use crate::{Error, Result};
 
 /// A source stream of data.
 pub trait DataSource {
-	/// Returns the number of bytes available for reading.
+	/// Returns the number of bytes available for reading. This does not necessarily
+	/// mean more data isn't available, just that *at least* this count is may be
+	/// read.
 	fn available(&self) -> usize;
 	/// Reads at most `count` bytes into an internal buffer, returning whether
 	/// enough bytes are available. To return an end-of-stream error, use [`require`]
@@ -18,6 +22,9 @@ pub trait DataSource {
 	///
 	/// [`require`]: Self::require
 	fn request(&mut self, count: usize) -> Result<bool>;
+	/// Consumes up to `count` bytes in the stream, returning the number of bytes
+	/// consumed if successful. At least the available count may be consumed.
+	fn skip(&mut self, count: usize) -> Result<usize>;
 	/// Reads at least `count` bytes into an internal buffer, returning the available
 	/// count if successful, or an end-of-stream error if not. For a softer version
 	/// that returns whether enough bytes are available, use [`request`].
@@ -37,11 +44,7 @@ pub trait DataSource {
 	/// successful, or an end-of-stream error if not. Bytes are not consumed if an
 	/// end-of-stream error is returned.
 	fn read_exact_bytes<'a>(&mut self, buf: &'a mut [u8]) -> Result<&'a [u8]> {
-		let len = buf.len();
-		self.require(len)?;
-		let bytes = self.read_bytes(buf)?;
-		assert_eq!(bytes.len(), len);
-		Ok(bytes)
+		default_read_exact_bytes(self, buf)
 	}
 	/// Reads an array with a size of `N` bytes.
 	fn read_array<const N: usize>(&mut self) -> Result<[u8; N]> where Self: Sized {
@@ -128,15 +131,7 @@ pub trait DataSource {
 	/// from it, including the invalid bytes and any subsequent bytes.
 	#[cfg(feature = "alloc")]
 	fn read_utf8<'a>(&mut self, count: usize, buf: &'a mut String) -> Result<&'a str> {
-		buf.reserve(count);
-		unsafe {
-			crate::append_utf8(buf, |b| {
-				let len = b.len();
-				b.set_len(len + count);
-				self.read_bytes(&mut b[len..])
-					.map(<[u8]>::len)
-			})
-		}
+		default_read_utf8(self, count, buf)
 	}
 
 	/// Reads UTF-8 bytes into `buf` until the end of the stream, returning the
@@ -163,3 +158,119 @@ trait ReadSpec<T: Pod>: DataSource {
 }
 
 impl<S: DataSource + ?Sized, T: Pod> ReadSpec<T> for S { }
+
+/// Accesses a source's internal buffer.
+pub trait BufferAccess: DataSource {
+	/// Returns the capacity of the internal buffer.
+	fn buf_capacity(&self) -> usize;
+	/// Returns a slice over the filled portion of the internal buffer. This slice
+	/// may not contain the whole buffer, for example if it can't be represented as
+	/// just one slice.
+	fn buf(&self) -> &[u8];
+	/// Fills the internal buffer from the underlying stream, returning its contents
+	/// if successful.
+	fn fill_buf(&mut self) -> Result<&[u8]>;
+	/// Clears the internal buffer.
+	fn clear_buf(&mut self);
+	/// Consumes `count` bytes from the internal buffer. The `count` must be `<=`
+	/// the length of the slice returned by either [`buf`](Self::buf) or
+	/// [`fill_buf`](Self::fill_buf)
+	/// 
+	/// # Panics
+	/// 
+	/// This method panics if `count` exceeds the buffer length.
+	fn consume(&mut self, count: usize);
+}
+
+#[cfg(feature = "nightly_specialization")]
+impl<T: BufferAccess + ?Sized> DataSource for T {
+	default fn available(&self) -> usize {
+		default_available(self)
+	}
+
+	default fn request(&mut self, count: usize) -> Result<bool> {
+		default_request(self, count)
+	}
+
+	default fn skip(&mut self, count: usize) -> Result<usize> {
+		default_skip(self, count)
+	}
+
+	default fn read_bytes<'a>(&mut self, buf: &'a mut [u8]) -> Result<&'a [u8]> {
+		let mut slice = &mut *buf;
+		while !slice.is_empty() {
+			self.request(slice.len())?;
+			if self.available() == 0 {
+				break
+			}
+			
+			let count = self.buf().read_bytes(slice)?.len();
+			slice = &mut slice[count..];
+		}
+
+		let unfilled = slice.len();
+		let filled = buf.len() - unfilled;
+		Ok(&buf[..filled])
+	}
+
+	default fn read_exact_bytes<'a>(&mut self, buf: &'a mut [u8]) -> Result<&'a [u8]> {
+		default_read_exact_bytes(self, buf)
+	}
+
+	#[cfg(feature = "alloc")]
+	default fn read_utf8<'a>(&mut self, count: usize, buf: &'a mut String) -> Result<&'a str> {
+		default_read_utf8(self, count, buf)
+	}
+
+	#[cfg(feature = "alloc")]
+	default fn read_utf8_to_end<'a>(&mut self, _: &'a mut String) -> Result<&'a str> {
+		todo!("will be removed later")
+	}
+}
+
+pub(crate) fn default_available(source: &(impl BufferAccess + ?Sized)) -> usize {
+	source.buf().len()
+}
+
+pub(crate) fn default_request(source: &mut (impl BufferAccess + ?Sized), count: usize) -> Result<bool> {
+	if source.available() < count {
+		Ok(source.fill_buf()?.len() >= count)
+	} else {
+		Ok(true)
+	}
+}
+
+pub(crate) fn default_skip(source: &mut (impl BufferAccess + ?Sized), mut count: usize) -> Result<usize> {
+	let avail = source.available();
+	count = count.min(avail);
+	source.consume(count);
+	// Guard against faulty implementations by verifying that the buffered
+	// bytes were removed.
+	assert_eq!(source.available(), avail.saturating_sub(count));
+	Ok(avail)
+}
+
+pub(crate) fn default_read_exact_bytes<'a>(source: &mut (impl DataSource + ?Sized), buf: &'a mut [u8]) -> Result<&'a [u8]> {
+	let len = buf.len();
+	source.require(len)?;
+	let bytes = source.read_bytes(buf)?;
+	assert_eq!(bytes.len(), len);
+	Ok(bytes)
+}
+
+#[cfg(feature = "alloc")]
+pub(crate) fn default_read_utf8<'a>(
+	source: &mut (impl DataSource + ?Sized),
+	count: usize,
+	buf: &'a mut String
+) -> Result<&'a str> {
+	buf.reserve(count);
+	unsafe {
+		crate::append_utf8(buf, |b| {
+			let len = b.len();
+			b.set_len(len + count);
+			source.read_bytes(&mut b[len..])
+				  .map(<[u8]>::len)
+		})
+	}
+}
