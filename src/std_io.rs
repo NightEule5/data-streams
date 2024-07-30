@@ -2,20 +2,33 @@
 
 #![cfg(feature = "std")]
 
+#[cfg(feature = "alloc")]
+use alloc::string::String;
 use std::io::{BufRead, BufReader, BufWriter, ErrorKind, Read, Write};
-use crate::{DataSink, DataSource, Result};
+use crate::Result;
+use crate::sink::DataSink;
+use crate::source::{BufferAccess, DataSource, default_available, default_request, default_skip};
 
 impl<R: Read + ?Sized> DataSource for BufReader<R> {
 	fn available(&self) -> usize {
-		self.buffer().len()
+		default_available(self)
 	}
 
 	fn request(&mut self, count: usize) -> Result<bool> {
-		if self.available() < count {
-			Ok(self.fill_buf()?.len() >= count)
-		} else {
-			Ok(true)
+		default_request(self, count)
+	}
+	
+	fn skip(&mut self, count: usize) -> Result<usize> {
+		let mut skip_count = 0;
+		while skip_count < count {
+			let cur_skip_count = default_skip(&mut *self, count)?;
+			skip_count += cur_skip_count;
+			
+			if cur_skip_count == 0 {
+				break
+			}
 		}
+		Ok(skip_count)
 	}
 
 	fn read_bytes<'a>(&mut self, buf: &'a mut [u8]) -> Result<&'a [u8]> {
@@ -44,6 +57,24 @@ impl<R: Read + ?Sized> DataSource for BufReader<R> {
 				Ok(self.read_to_end(b)?)
 			)
 		}
+	}
+}
+
+impl<R: Read + ?Sized> BufferAccess for BufReader<R> {
+	fn buf_capacity(&self) -> usize { self.capacity() }
+
+	fn buf(&self) -> &[u8] { self.buffer() }
+
+	fn fill_buf(&mut self) -> Result<&[u8]> {
+		Ok(BufRead::fill_buf(self)?)
+	}
+
+	fn clear_buf(&mut self) {
+		BufferAccess::consume(self, self.available())
+	}
+
+	fn consume(&mut self, count: usize) {
+		BufRead::consume(self, count)
 	}
 }
 

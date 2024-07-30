@@ -4,7 +4,8 @@
 use alloc::string::String;
 #[cfg(feature = "alloc")]
 use simdutf8::compat::from_utf8;
-use crate::{DataSource, Result};
+use crate::Result;
+use crate::source::{BufferAccess, DataSource};
 
 impl DataSource for &[u8] {
 	#[inline(always)]
@@ -12,6 +13,12 @@ impl DataSource for &[u8] {
 	#[inline(always)]
 	fn request(&mut self, count: usize) -> Result<bool> {
 		Ok(self.len() >= count)
+	}
+
+	fn skip(&mut self, mut count: usize) -> Result<usize> {
+		count = count.min(self.len());
+		self.consume(count);
+		Ok(count)
 	}
 	
 	fn read_bytes<'a>(&mut self, buf: &'a mut [u8]) -> Result<&'a [u8]> {
@@ -34,5 +41,21 @@ impl DataSource for &[u8] {
 	#[cfg(feature = "alloc")]
 	fn read_utf8_to_end<'a>(&mut self, buf: &'a mut String) -> Result<&'a str> {
 		self.read_utf8(self.len(), buf)
+	}
+}
+
+impl BufferAccess for &[u8] {
+	fn buf_capacity(&self) -> usize { self.len() }
+
+	fn buf(&self) -> &[u8] { self }
+
+	fn fill_buf(&mut self) -> Result<&[u8]> { Ok(self) }
+
+	fn clear_buf(&mut self) {
+		*self = &[];
+	}
+
+	fn consume(&mut self, count: usize) {
+		*self = &self[..count];
 	}
 }
