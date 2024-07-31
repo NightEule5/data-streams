@@ -20,11 +20,17 @@ jobs:
       run: cargo build --verbose
     - name: Build no_std
       run: cargo build --verbose --no-default-features
+    - name: Build with nightly features
+      run: cargo build --verbose --features nightly
     - name: Run Clippy
       run: cargo clippy --verbose
     - name: Run Clippy on no_std
       run: cargo clippy --verbose --no-default-features
+    - name: Run Clippy with nightly features
+      run: cargo clippy --verbose --features nightly
     - name: Run tests
       run: cargo test --verbose
     - name: Run tests on no_std
       run: cargo test --verbose --no-default-features
+    - name: Run tests with nightly features
+      run: cargo test --verbose --features nightly

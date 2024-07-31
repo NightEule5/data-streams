@@ -59,3 +59,11 @@ impl BufferAccess for &[u8] {
 		*self = &self[..count];
 	}
 }
+
+pub(crate) fn read_bytes_infallible<'a>(source: &mut &[u8], sink: &'a mut [u8]) -> &'a [u8] {
+	let len = source.len().min(sink.len());
+	let (filled, unfilled) = sink.split_at_mut(len);
+	filled.copy_from_slice(&source[..len]);
+	*source = &source[len..];
+	unfilled
+}

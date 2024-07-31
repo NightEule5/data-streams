@@ -87,6 +87,10 @@ pub enum Error {
 	End {
 		required_count: usize
 	},
+	InsufficientBuffer {
+		spare_capacity: usize,
+		required_count: usize
+	},
 }
 
 #[cfg(feature = "std")]
@@ -97,7 +101,8 @@ impl std::error::Error for Error {
 			Self::Io(error) => Some(error),
 			#[cfg(feature = "alloc")]
 			Self::Utf8(error) => Some(error),
-			Self::End { .. } => None,
+			Self::End { .. } |
+			Self::InsufficientBuffer { .. } => None,
 		}
 	}
 }
@@ -110,6 +115,9 @@ impl fmt::Display for Error {
 			#[cfg(feature = "alloc")]
 			Self::Utf8(error) => fmt::Display::fmt(error, f),
 			Self::End { required_count } => write!(f, "premature end-of-stream when reading {required_count} bytes"),
+			Self::InsufficientBuffer {
+				spare_capacity, required_count
+			} => write!(f, "insufficient buffer capacity ({spare_capacity}) to read {required_count} bytes"),
 		}
 	}
 }
