@@ -56,7 +56,7 @@ impl BufferAccess for &[u8] {
 	}
 
 	fn consume(&mut self, count: usize) {
-		*self = &self[..count];
+		*self = &self[count..];
 	}
 }
 
