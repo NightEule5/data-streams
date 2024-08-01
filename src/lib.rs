@@ -1,3 +1,4 @@
+// Copyright 2024 - Strixpyrr
 // SPDX-License-Identifier: Apache-2.0
 
 //! This crate provides stream traits for conveniently read and writing many data types: bytes,
@@ -67,6 +68,7 @@ mod slice;
 mod std_io;
 mod source;
 mod sink;
+mod vec;
 
 #[cfg(feature = "alloc")]
 use alloc::{string::String, vec::Vec};
@@ -84,6 +86,8 @@ pub enum Error {
 	Io(io::Error),
 	#[cfg(feature = "alloc")]
 	Utf8(Utf8Error),
+	#[cfg(feature = "alloc")]
+	Allocation(alloc::collections::TryReserveError),
 	/// A sink reached a hard storage limit, causing an overflow while writing. An
 	/// example is a mutable slice, which can't write more bytes than its length.
 	Overflow { remaining: usize },
@@ -100,6 +104,8 @@ impl std::error::Error for Error {
 			Self::Io(error) => Some(error),
 			#[cfg(feature = "alloc")]
 			Self::Utf8(error) => Some(error),
+			#[cfg(feature = "alloc")]
+			Self::Allocation(error) => Some(error),
 			Self::Overflow { .. } |
 			Self::End { .. } => None,
 		}
@@ -113,6 +119,8 @@ impl fmt::Display for Error {
 			Self::Io(error) => fmt::Display::fmt(error, f),
 			#[cfg(feature = "alloc")]
 			Self::Utf8(error) => fmt::Display::fmt(error, f),
+			#[cfg(feature = "alloc")]
+			Self::Allocation(error) => fmt::Display::fmt(error, f),
 			Self::Overflow { remaining } => write!(f, "sink overflowed with {remaining} bytes remaining to write"),
 			Self::End { required_count } => write!(f, "premature end-of-stream when reading {required_count} bytes"),
 		}
@@ -130,6 +138,13 @@ impl From<io::Error> for Error {
 impl From<Utf8Error> for Error {
 	fn from(value: Utf8Error) -> Self {
 		Self::Utf8(value)
+	}
+}
+
+#[cfg(feature = "alloc")]
+impl From<alloc::collections::TryReserveError> for Error {
+	fn from(value: alloc::collections::TryReserveError) -> Self {
+		Self::Allocation(value)
 	}
 }
 
