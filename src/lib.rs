@@ -84,6 +84,9 @@ pub enum Error {
 	Io(io::Error),
 	#[cfg(feature = "alloc")]
 	Utf8(Utf8Error),
+	/// A sink reached a hard storage limit, causing an overflow while writing. An
+	/// example is a mutable slice, which can't write more bytes than its length.
+	Overflow { remaining: usize },
 	End {
 		required_count: usize
 	},
@@ -97,6 +100,7 @@ impl std::error::Error for Error {
 			Self::Io(error) => Some(error),
 			#[cfg(feature = "alloc")]
 			Self::Utf8(error) => Some(error),
+			Self::Overflow { .. } |
 			Self::End { .. } => None,
 		}
 	}
@@ -109,6 +113,7 @@ impl fmt::Display for Error {
 			Self::Io(error) => fmt::Display::fmt(error, f),
 			#[cfg(feature = "alloc")]
 			Self::Utf8(error) => fmt::Display::fmt(error, f),
+			Self::Overflow { remaining } => write!(f, "sink overflowed with {remaining} bytes remaining to write"),
 			Self::End { required_count } => write!(f, "premature end-of-stream when reading {required_count} bytes"),
 		}
 	}

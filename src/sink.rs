@@ -3,11 +3,17 @@
 
 use num_traits::PrimInt;
 use bytemuck::{bytes_of, Pod};
-use crate::Result;
+use crate::{Error, Result};
 
 /// A sink stream of data.
 pub trait DataSink {
 	/// Writes all bytes from `buf`. Equivalent to [`Write::write_all`].
+	/// 
+	/// # Errors
+	/// 
+	/// May return [`Overflow`](Error::Overflow) if the sink would exceed some hard
+	/// storage limit. In the case, the stream is filled completely, excluding the
+	/// overflowing bytes.
 	/// 
 	/// [`Write::write_all`]: io::Write::write_all
 	fn write_bytes(&mut self, buf: &[u8]) -> Result;

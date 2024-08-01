@@ -4,7 +4,7 @@
 use alloc::string::String;
 #[cfg(feature = "alloc")]
 use simdutf8::compat::from_utf8;
-use crate::Result;
+use crate::{DataSink, Error, Result};
 use crate::source::{BufferAccess, DataSource};
 
 impl DataSource for &[u8] {
@@ -57,5 +57,21 @@ impl BufferAccess for &[u8] {
 
 	fn consume(&mut self, count: usize) {
 		*self = &self[..count];
+	}
+}
+
+impl DataSink for &mut [u8] {
+	fn write_bytes(&mut self, buf: &[u8]) -> Result {
+		let len = buf.len().min(self.len());
+		// From <[_]>::take_mut
+		let (target, empty) = core::mem::take(self).split_at_mut(len);
+		*self = empty;
+		target.copy_from_slice(&buf[..len]);
+		let remaining = buf.len() - len;
+		if remaining > 0 {
+			Err(Error::Overflow { remaining })
+		} else {
+			Ok(())
+		}
 	}
 }
