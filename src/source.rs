@@ -326,7 +326,7 @@ fn default_read_exact_bytes<'a>(source: &mut (impl DataSource + ?Sized), buf: &'
 	}
 }
 
-#[cfg(feature = "nightly_specialization")]
+#[cfg(any(feature = "nightly_specialization", test))]
 fn buf_read_exact_bytes<'a>(source: &mut (impl BufferAccess + ?Sized), buf: &'a mut [u8]) -> Result<&'a [u8]> {
 	let len = buf.len();
 	match source.require(len) {
@@ -366,5 +366,100 @@ pub(crate) fn default_read_utf8<'a>(
 			source.read_bytes(&mut b[len..])
 				  .map(<[u8]>::len)
 		})
+	}
+}
+
+#[cfg(feature = "alloc")]
+#[cfg(test)]
+mod read_exact_test {
+	use std::assert_matches::assert_matches;
+	use proptest::prelude::*;
+	use alloc::vec::from_elem;
+	use proptest::collection::vec;
+	use crate::{BufferAccess, DataSource, Result};
+
+	struct FakeBufSource {
+		source: Vec<u8>,
+		buffer: Vec<u8>
+	}
+
+	#[cfg(feature = "nightly_specialization")]
+	impl BufferAccess for FakeBufSource {
+		fn buf_capacity(&self) -> usize {
+			self.buffer.capacity()
+		}
+
+		fn buf(&self) -> &[u8] {
+			&self.buffer
+		}
+
+		fn fill_buf(&mut self) -> Result<&[u8]> {
+			let Self { source, buffer } = self;
+			let len = buffer.len();
+			buffer.fill(0);
+			let source_slice = &mut &source[..];
+			let consumed = source_slice.read_bytes(&mut buffer[len..])?.len();
+			source.drain(..consumed);
+			buffer.truncate(consumed + len);
+			Ok(buffer)
+		}
+
+		fn clear_buf(&mut self) {
+			self.buffer.clear();
+		}
+
+		fn consume(&mut self, count: usize) {
+			if count == self.buffer.len() {
+				self.clear_buf();
+			} else {
+				self.buffer.drain(..count);
+			}
+		}
+	}
+
+	proptest! {
+		#[test]
+		fn read_exact_end_of_stream(source in vec(any::<u8>(), 1..=256)) {
+			let mut buf = from_elem(0, source.len() + 1);
+			assert_matches!(
+				super::default_read_exact_bytes(&mut &*source, &mut buf),
+				Err(super::Error::End { .. })
+			)
+		}
+	}
+
+	proptest! {
+		#[test]
+		fn buf_read_exact_end_of_stream(source in vec(any::<u8>(), 1..=256)) {
+			let mut buf = from_elem(0, source.len() + 1);
+			assert_matches!(
+				super::buf_read_exact_bytes(&mut &*source, &mut buf),
+				Err(super::Error::End { .. })
+			)
+		}
+	}
+
+	#[cfg(feature = "nightly_specialization")]
+	proptest! {
+		#[test]
+		fn read_exact_insufficient_buffer(source in vec(any::<u8>(), 1..=256)) {
+			let source_len = source.len();
+			let buffer = Vec::with_capacity(source_len - 1);
+			let mut source = FakeBufSource { source, buffer };
+			let mut target = from_elem(0, source_len);
+			source.read_exact_bytes(&mut target).map(<[u8]>::len).unwrap();
+		}
+	}
+
+	#[cfg(feature = "nightly_specialization")]
+	proptest! {
+		#[test]
+		fn read_exact_buffered(source in vec(any::<u8>(), 1..=256)) {
+			let source_len = source.len();
+			let buffer = Vec::with_capacity(source_len + 1);
+			let mut source = FakeBufSource { source, buffer };
+			let mut target = from_elem(0, source_len);
+			source.read_exact_bytes(&mut target).map(<[u8]>::len).unwrap();
+		}
 	}
 }

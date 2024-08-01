@@ -56,6 +56,7 @@
 
 #![cfg_attr(not(feature = "std"), no_std)]
 #![cfg_attr(feature = "nightly_specialization", feature(specialization))]
+#![cfg_attr(test, feature(assert_matches))]
 #![allow(incomplete_features)]
 
 #[cfg(not(feature = "std"))]
