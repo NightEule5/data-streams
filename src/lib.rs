@@ -58,6 +58,7 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 #![cfg_attr(feature = "nightly_specialization", feature(specialization))]
 #![cfg_attr(feature = "nightly_borrowed_buf", feature(core_io_borrowed_buf))]
+#![cfg_attr(feature = "nightly_uninit_slice", feature(maybe_uninit_write_slice))]
 #![allow(incomplete_features)]
 
 #[cfg(feature = "alloc")]

@@ -13,9 +13,10 @@ repository = "https://github.com/NightEule5/data-streams/"
 default = ["std", "alloc"]
 std = ["num-traits/std", "simdutf8/std"]
 alloc = ["simdutf8"]
-nightly = ["nightly_specialization", "nightly_borrowed_buf"]
+nightly = ["nightly_specialization", "nightly_borrowed_buf", "nightly_uninit_slice"]
 nightly_specialization = []
 nightly_borrowed_buf = []
+nightly_uninit_slice = []
 
 [dependencies]
 bytemuck = "1.16.1"
