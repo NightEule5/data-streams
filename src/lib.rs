@@ -57,10 +57,9 @@
 
 #![cfg_attr(not(feature = "std"), no_std)]
 #![cfg_attr(feature = "nightly_specialization", feature(specialization))]
+#![cfg_attr(feature = "nightly_borrowed_buf", feature(core_io_borrowed_buf))]
 #![allow(incomplete_features)]
 
-#[cfg(not(feature = "std"))]
-extern crate core;
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
@@ -69,6 +68,7 @@ mod std_io;
 mod source;
 mod sink;
 mod vec;
+mod core_io;
 
 #[cfg(feature = "alloc")]
 use alloc::{string::String, vec::Vec};
