@@ -11,8 +11,8 @@ repository = "https://github.com/NightEule5/data-streams/"
 
 [features]
 default = ["std", "alloc"]
-std = ["num-traits/std", "simdutf8/std", "proptest/std"]
-alloc = ["simdutf8", "proptest/alloc"]
+std = ["num-traits/std", "simdutf8/std"]
+alloc = ["simdutf8"]
 nightly = ["nightly_specialization", "nightly_borrowed_buf", "nightly_uninit_slice"]
 nightly_specialization = []
 nightly_borrowed_buf = []
@@ -24,4 +24,4 @@ num-traits = { version = "0.2.19", features = ["i128"] }
 simdutf8 = { version = "0.1.4", optional = true }
 
 [dev-dependencies]
-proptest = { version = "1.5.0", default-features = false }
+proptest =  "1.5.0"

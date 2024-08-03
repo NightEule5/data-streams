@@ -373,7 +373,7 @@ pub(crate) fn default_read_utf8<'a>(
 	}
 }
 
-#[cfg(feature = "alloc")]
+#[cfg(all(feature = "std", feature = "alloc"))]
 #[cfg(test)]
 mod read_exact_test {
 	use std::assert_matches::assert_matches;
