@@ -179,7 +179,7 @@ impl BufferAccess for VecDeque<u8> {
 	fn buf(&self) -> &[u8] { self.as_slices().0 }
 
 	fn fill_buf(&mut self) -> Result<&[u8]> {
-		Ok(self.buf()) // Nothing to read
+		Ok((*self).buf()) // Nothing to read
 	}
 
 	fn clear_buf(&mut self) {

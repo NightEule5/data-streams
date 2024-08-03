@@ -105,7 +105,7 @@ impl<T: AsRef<[u8]>> BufferAccess for Cursor<T> {
 	}
 
 	fn fill_buf(&mut self) -> Result<&[u8]> {
-		Ok(self.buf()) // Nothing to read
+		Ok((*self).buf()) // Nothing to read
 	}
 
 	fn clear_buf(&mut self) {
