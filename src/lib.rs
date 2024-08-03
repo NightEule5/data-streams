@@ -70,6 +70,7 @@ mod source;
 mod sink;
 mod vec;
 mod core_io;
+mod wrappers;
 
 #[cfg(feature = "alloc")]
 use alloc::{string::String, vec::Vec};

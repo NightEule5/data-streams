@@ -284,7 +284,7 @@ fn get_repeated_byte(repeat: &mut Repeat) -> u8 {
 	b
 }
 
-fn buf_read_skip(source: &mut (impl BufferAccess + ?Sized), count: usize) -> Result<usize> {
+fn buf_read_skip(source: &mut (impl BufferAccess + DataSource + ?Sized), count: usize) -> Result<usize> {
 	let mut skip_count = 0;
 	while skip_count < count {
 		let cur_skip_count = default_skip(&mut *source, count)?;
@@ -297,7 +297,7 @@ fn buf_read_skip(source: &mut (impl BufferAccess + ?Sized), count: usize) -> Res
 	Ok(skip_count)
 }
 
-fn buf_read_bytes<'a>(source: &mut (impl BufferAccess + Read + ?Sized), buf: &'a mut [u8]) -> Result<&'a [u8]> {
+fn buf_read_bytes<'a>(source: &mut (impl BufferAccess + DataSource + Read + ?Sized), buf: &'a mut [u8]) -> Result<&'a [u8]> {
 	use ErrorKind::Interrupted;
 
 	let mut count = 0;

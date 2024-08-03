@@ -96,7 +96,7 @@ pub trait DataSink {
 	}
 }
 
-trait WriteSpec<T: Pod>: DataSink {
+pub(crate) trait WriteSpec<T: Pod>: DataSink {
 	fn write_int_be_spec(&mut self, value: T) -> Result
 	where T: PrimInt {
 		self.write_data_spec(value.to_be())
