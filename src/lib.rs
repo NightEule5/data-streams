@@ -82,6 +82,7 @@ pub use sink::DataSink;
 pub use source::{DataSource, BufferAccess};
 
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum Error {
 	#[cfg(feature = "std")]
 	Io(io::Error),
