@@ -61,9 +61,7 @@ pub trait DataSource {
 	}
 	/// Reads an array with a size of `N` bytes.
 	fn read_array<const N: usize>(&mut self) -> Result<[u8; N]> where Self: Sized {
-		let mut array = [0; N];
-		self.read_exact_bytes(&mut array)?;
-		Ok(array)
+		default_read_array(self)
 	}
 
 	/// Reads a [`u8`].
@@ -156,7 +154,7 @@ pub trait DataSource {
 }
 
 /// Helper extension trait for reading generic data from an unsized source.
-trait ReadSpec<T: Pod>: DataSource {
+pub(crate) trait ReadSpec<T: Pod>: DataSource {
 	fn read_int_be_spec(&mut self) -> Result<T> where T: PrimInt {
 		self.read_data_spec().map(T::from_be)
 	}
@@ -173,7 +171,7 @@ trait ReadSpec<T: Pod>: DataSource {
 impl<S: DataSource + ?Sized, T: Pod> ReadSpec<T> for S { }
 
 /// Accesses a source's internal buffer.
-pub trait BufferAccess: DataSource {
+pub trait BufferAccess {
 	/// Returns the capacity of the internal buffer.
 	fn buf_capacity(&self) -> usize;
 	/// Returns a slice over the filled portion of the internal buffer. This slice
@@ -249,7 +247,7 @@ pub(crate) fn default_available(source: &(impl BufferAccess + ?Sized)) -> usize 
 	source.buf().len()
 }
 
-pub(crate) fn default_request(source: &mut (impl BufferAccess + ?Sized), count: usize) -> Result<bool> {
+pub(crate) fn default_request(source: &mut (impl BufferAccess + DataSource + ?Sized), count: usize) -> Result<bool> {
 	if source.available() < count {
 		let buf_len = default_available(source);
 		let spare_capacity = source.buf_capacity() - buf_len;
@@ -266,7 +264,7 @@ pub(crate) fn default_request(source: &mut (impl BufferAccess + ?Sized), count: 
 	}
 }
 
-pub(crate) fn default_skip(source: &mut (impl BufferAccess + ?Sized), mut count: usize) -> Result<usize> {
+pub(crate) fn default_skip(source: &mut (impl BufferAccess + DataSource + ?Sized), mut count: usize) -> Result<usize> {
 	let avail = source.available();
 	count = count.min(avail);
 	source.consume(count);
@@ -274,6 +272,12 @@ pub(crate) fn default_skip(source: &mut (impl BufferAccess + ?Sized), mut count:
 	// bytes were removed.
 	assert_eq!(source.available(), avail.saturating_sub(count));
 	Ok(avail)
+}
+
+pub(crate) fn default_read_array<const N: usize>(source: &mut (impl DataSource + ?Sized)) -> Result<[u8; N]> {
+	let mut array = [0; N];
+	source.read_exact_bytes(&mut array)?;
+	Ok(array)
 }
 
 fn try_read_exact_contiguous<'a>(source: &mut (impl DataSource + ?Sized), buf: &'a mut [u8]) -> Result<&'a [u8]> {
