@@ -213,6 +213,13 @@ impl DataSink for VecDeque<u8> {
 	}
 }
 
+impl DataSink for String {
+	fn write_bytes(&mut self, buf: &[u8]) -> Result {
+		self.push_str(from_utf8(buf)?);
+		Ok(())
+	}
+}
+
 /// A reimplementation of the unstable [`core::str::utf8_char_width`] function.
 fn utf8_char_width(byte: u8) -> usize {
 	const UTF8_CHAR_WIDTH: &[u8; 256] = &[
