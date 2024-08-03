@@ -1,3 +1,4 @@
+// Copyright 2024 - Strixpyrr
 // SPDX-License-Identifier: Apache-2.0
 
 //! This crate provides stream traits for conveniently read and writing many data types: bytes,
@@ -56,10 +57,10 @@
 
 #![cfg_attr(not(feature = "std"), no_std)]
 #![cfg_attr(feature = "nightly_specialization", feature(specialization))]
+#![cfg_attr(feature = "nightly_borrowed_buf", feature(core_io_borrowed_buf))]
+#![cfg_attr(feature = "nightly_uninit_slice", feature(maybe_uninit_write_slice))]
 #![allow(incomplete_features)]
 
-#[cfg(not(feature = "std"))]
-extern crate core;
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
@@ -67,6 +68,9 @@ mod slice;
 mod std_io;
 mod source;
 mod sink;
+mod vec;
+mod core_io;
+mod wrappers;
 
 #[cfg(feature = "alloc")]
 use alloc::{string::String, vec::Vec};
@@ -79,14 +83,24 @@ pub use sink::DataSink;
 pub use source::{DataSource, BufferAccess};
 
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum Error {
 	#[cfg(feature = "std")]
 	Io(io::Error),
 	#[cfg(feature = "alloc")]
+	Ascii(u8),
+	#[cfg(feature = "alloc")]
 	Utf8(Utf8Error),
+	#[cfg(feature = "alloc")]
+	Allocation(alloc::collections::TryReserveError),
+	/// A sink reached a hard storage limit, causing an overflow while writing. An
+	/// example is a mutable slice, which can't write more bytes than its length.
+	Overflow { remaining: usize },
 	End {
 		required_count: usize
 	},
+	/// A "read to end" method was called on a source with no defined end.
+	NoEnd,
 }
 
 #[cfg(feature = "std")]
@@ -96,8 +110,14 @@ impl std::error::Error for Error {
 			#[cfg(feature = "std")]
 			Self::Io(error) => Some(error),
 			#[cfg(feature = "alloc")]
+			Self::Ascii(_) => None,
+			#[cfg(feature = "alloc")]
 			Self::Utf8(error) => Some(error),
-			Self::End { .. } => None,
+			#[cfg(feature = "alloc")]
+			Self::Allocation(error) => Some(error),
+			Self::Overflow { .. } |
+			Self::End { .. } |
+			Self::NoEnd => None,
 		}
 	}
 }
@@ -108,8 +128,14 @@ impl fmt::Display for Error {
 			#[cfg(feature = "std")]
 			Self::Io(error) => fmt::Display::fmt(error, f),
 			#[cfg(feature = "alloc")]
+			Self::Ascii(byte) => write!(f, "cannot read non-ASCII byte {byte:#X} into a UTF-8 string"),
+			#[cfg(feature = "alloc")]
 			Self::Utf8(error) => fmt::Display::fmt(error, f),
+			#[cfg(feature = "alloc")]
+			Self::Allocation(error) => fmt::Display::fmt(error, f),
+			Self::Overflow { remaining } => write!(f, "sink overflowed with {remaining} bytes remaining to write"),
 			Self::End { required_count } => write!(f, "premature end-of-stream when reading {required_count} bytes"),
+			Self::NoEnd => write!(f, "cannot read to end of infinite source"),
 		}
 	}
 }
@@ -125,6 +151,13 @@ impl From<io::Error> for Error {
 impl From<Utf8Error> for Error {
 	fn from(value: Utf8Error) -> Self {
 		Self::Utf8(value)
+	}
+}
+
+#[cfg(feature = "alloc")]
+impl From<alloc::collections::TryReserveError> for Error {
+	fn from(value: alloc::collections::TryReserveError) -> Self {
+		Self::Allocation(value)
 	}
 }
 
