@@ -59,6 +59,7 @@
 #![cfg_attr(feature = "nightly_specialization", feature(specialization))]
 #![cfg_attr(feature = "nightly_borrowed_buf", feature(core_io_borrowed_buf))]
 #![cfg_attr(feature = "nightly_uninit_slice", feature(maybe_uninit_write_slice))]
+#![cfg_attr(test, feature(assert_matches))]
 #![allow(incomplete_features)]
 
 #[cfg(feature = "alloc")]
@@ -101,6 +102,10 @@ pub enum Error {
 	},
 	/// A "read to end" method was called on a source with no defined end.
 	NoEnd,
+	InsufficientBuffer {
+		spare_capacity: usize,
+		required_count: usize
+	},
 }
 
 #[cfg(feature = "std")]
@@ -117,7 +122,8 @@ impl std::error::Error for Error {
 			Self::Allocation(error) => Some(error),
 			Self::Overflow { .. } |
 			Self::End { .. } |
-			Self::NoEnd => None,
+			Self::NoEnd |
+			Self::InsufficientBuffer { .. } => None,
 		}
 	}
 }
@@ -136,6 +142,9 @@ impl fmt::Display for Error {
 			Self::Overflow { remaining } => write!(f, "sink overflowed with {remaining} bytes remaining to write"),
 			Self::End { required_count } => write!(f, "premature end-of-stream when reading {required_count} bytes"),
 			Self::NoEnd => write!(f, "cannot read to end of infinite source"),
+			Self::InsufficientBuffer {
+				spare_capacity, required_count
+			} => write!(f, "insufficient buffer capacity ({spare_capacity}) to read {required_count} bytes"),
 		}
 	}
 }

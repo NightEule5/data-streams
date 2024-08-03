@@ -11,20 +11,38 @@ env:
 
 jobs:
   build:
-
+    name: Build
     runs-on: ubuntu-latest
-
     steps:
     - uses: actions/checkout@v4
+    - run: rustup update nightly
     - name: Build
       run: cargo build --verbose
-    - name: Build no_std
+    - name: Build with no_std
       run: cargo build --verbose --no-default-features
-    - name: Run Clippy
-      run: cargo clippy --verbose
-    - name: Run Clippy on no_std
-      run: cargo clippy --verbose --no-default-features
-    - name: Run tests
-      run: cargo test --verbose
-    - name: Run tests on no_std
-      run: cargo test --verbose --no-default-features
+    - name: Build with nightly features
+      run: cargo +nightly build --verbose --features nightly
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup update nightly && rustup component add --toolchain nightly-x86_64-unknown-linux-gnu clippy
+      - name: Lint
+        run: cargo clippy --verbose
+      - name: Lint with no_std
+        run: cargo clippy --verbose --no-default-features
+      - name: Lint with nightly features
+        run: cargo +nightly clippy --verbose --features nightly
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup update nightly && rustup default nightly
+      - name: Run tests
+        run: cargo test --verbose
+      - name: Run tests on no_std
+        run: cargo test --verbose --no-default-features
+      - name: Run tests with nightly features
+        run: cargo test --verbose --features nightly

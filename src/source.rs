@@ -5,7 +5,7 @@
 use alloc::string::String;
 use bytemuck::{bytes_of_mut, Pod};
 use num_traits::PrimInt;
-use crate::{Error, Result};
+use crate::{Error, Result, slice};
 
 /// A source stream of data.
 pub trait DataSource {
@@ -20,14 +20,22 @@ pub trait DataSource {
 	/// Note that a request returning `false` doesn't necessarily mean the stream
 	/// has ended. More bytes may be read after.
 	///
+	/// # Errors
+	///
+	/// If the byte count exceeds the spare buffer capacity, [`Error::InsufficientBuffer`]
+	/// is returned and both the internal buffer and underlying streams remain unchanged.
+	///
 	/// [`require`]: Self::require
 	fn request(&mut self, count: usize) -> Result<bool>;
-	/// Consumes up to `count` bytes in the stream, returning the number of bytes
-	/// consumed if successful. At least the available count may be consumed.
-	fn skip(&mut self, count: usize) -> Result<usize>;
-	/// Reads at least `count` bytes into an internal buffer, returning the available
-	/// count if successful, or an end-of-stream error if not. For a softer version
-	/// that returns whether enough bytes are available, use [`request`].
+	/// Reads at least `count` bytes into an internal buffer, returning `Ok` if
+	/// successful, or an end-of-stream error if not. For a softer version that
+	/// returns whether enough bytes are available, use [`request`].
+	///
+	/// # Errors
+	///
+	/// Returns [`Error::End`] if the stream ended before `count` bytes could be
+	/// read. If the byte count exceeds the spare buffer capacity, [`Error::InsufficientBuffer`]
+	/// is returned instead.
 	///
 	/// [`request`]: Self::request
 	fn require(&mut self, count: usize) -> Result {
@@ -38,7 +46,12 @@ pub trait DataSource {
 		}
 	}
 
-	/// Reads bytes into a slice, returning the bytes read.
+	/// Consumes up to `count` bytes in the stream, returning the number of bytes
+	/// consumed if successful. At least the available count may be consumed.
+	fn skip(&mut self, count: usize) -> Result<usize>;
+	/// Reads bytes into a slice, returning the bytes read. This method is greedy;
+	/// it consumes as many bytes as it can, until `buf` is filled or no more bytes
+	/// are read.
 	fn read_bytes<'a>(&mut self, buf: &'a mut [u8]) -> Result<&'a [u8]>;
 	/// Reads the exact length of bytes into a slice, returning the bytes read if
 	/// successful, or an end-of-stream error if not. Bytes are not consumed if an
@@ -197,12 +210,16 @@ impl<T: BufferAccess + ?Sized> DataSource for T {
 	default fn read_bytes<'a>(&mut self, buf: &'a mut [u8]) -> Result<&'a [u8]> {
 		let mut slice = &mut *buf;
 		while !slice.is_empty() {
-			self.request(slice.len())?;
-			if self.available() == 0 {
+			let mut buf = match self.request(slice.len()) {
+				Ok(_) => self.buf(),
+				Err(Error::InsufficientBuffer { .. }) => self.fill_buf()?,
+				Err(error) => return Err(error)
+			};
+			if buf.is_empty() {
 				break
 			}
 			
-			let count = self.buf().read_bytes(slice)?.len();
+			let count = buf.read_bytes(slice)?.len();
 			slice = &mut slice[count..];
 		}
 
@@ -212,7 +229,7 @@ impl<T: BufferAccess + ?Sized> DataSource for T {
 	}
 
 	default fn read_exact_bytes<'a>(&mut self, buf: &'a mut [u8]) -> Result<&'a [u8]> {
-		default_read_exact_bytes(self, buf)
+		buf_read_exact_bytes(self, buf)
 	}
 
 	#[cfg(feature = "alloc")]
@@ -232,7 +249,16 @@ pub(crate) fn default_available(source: &(impl BufferAccess + ?Sized)) -> usize 
 
 pub(crate) fn default_request(source: &mut (impl BufferAccess + DataSource + ?Sized), count: usize) -> Result<bool> {
 	if source.available() < count {
-		Ok(source.fill_buf()?.len() >= count)
+		let buf_len = default_available(source);
+		let spare_capacity = source.buf_capacity() - buf_len;
+		if source.buf_capacity() > 0 && count < spare_capacity {
+			Ok(source.fill_buf()?.len() >= count)
+		} else {
+			Err(Error::InsufficientBuffer {
+				spare_capacity,
+				required_count: count - buf_len,
+			})
+		}
 	} else {
 		Ok(true)
 	}
@@ -254,12 +280,80 @@ pub(crate) fn default_read_array<const N: usize>(source: &mut (impl DataSource +
 	Ok(array)
 }
 
-pub(crate) fn default_read_exact_bytes<'a>(source: &mut (impl DataSource + ?Sized), buf: &'a mut [u8]) -> Result<&'a [u8]> {
+fn try_read_exact_contiguous<'a>(source: &mut (impl DataSource + ?Sized), buf: &'a mut [u8]) -> Result<&'a [u8]> {
 	let len = buf.len();
-	source.require(len)?;
 	let bytes = source.read_bytes(buf)?;
-	assert_eq!(bytes.len(), len);
+	assert_eq!(
+		bytes.len(),
+		len,
+		"read_bytes should be greedy; at least {available} bytes were available \
+		in the buffer, but only {read_len} bytes of the required {len} were read",
+		available = source.available(),
+		read_len = bytes.len()
+	);
 	Ok(bytes)
+}
+
+fn try_read_exact_discontiguous<'a>(
+	source: &mut (impl DataSource + ?Sized),
+	buf: &'a mut [u8],
+	remaining: usize
+) -> Result<&'a [u8]> {
+	let filled = buf.len() - remaining;
+	let read_count = source.read_bytes(&mut buf[filled..])?.len();
+	if read_count < remaining {
+		if source.available() < remaining {
+			// Buffer was exhausted, meaning the stream ended prematurely
+			Err(Error::End { required_count: buf.len() })
+		} else {
+			// read_bytes wasn't greedy, there were enough bytes in the buffer >:(
+			panic!("read_bytes should have read {remaining} buffered bytes")
+		}
+	} else {
+		// The whole slice has been confirmed to be filled.
+		Ok(buf)
+	}
+}
+
+fn default_read_exact_bytes<'a>(source: &mut (impl DataSource + ?Sized), buf: &'a mut [u8]) -> Result<&'a [u8]> {
+	let len = buf.len();
+	match source.require(len) {
+		Ok(()) => try_read_exact_contiguous(source, buf),
+		Err(Error::InsufficientBuffer { .. }) => {
+			// The buffer is not large enough to read the slice contiguously, and
+			// we have no access to the buffer to drain it. So just try reading and
+			// check if all bytes were read.
+			let remaining = buf.len();
+			try_read_exact_discontiguous(source, buf, remaining)
+		}
+		Err(error) => Err(error)
+	}
+}
+
+#[cfg(any(feature = "nightly_specialization", test))]
+fn buf_read_exact_bytes<'a>(source: &mut (impl BufferAccess + DataSource + ?Sized), buf: &'a mut [u8]) -> Result<&'a [u8]> {
+	let len = buf.len();
+	match source.require(len) {
+		Ok(()) => try_read_exact_contiguous(source, buf),
+		Err(Error::InsufficientBuffer { .. }) => {
+			// We're doing a large read. Drain the internal buffer, then try reading.
+			// Most default implementations of read_bytes optimize for this case by
+			// skipping the buffer.
+
+			let mut slice = &mut *buf;
+			let mut s_buf = source.buf();
+			while !slice.is_empty() && !s_buf.is_empty() {
+				let len = slice::read_bytes_infallible(&mut s_buf, slice).len();
+				slice = &mut slice[len..];
+				source.consume(len);
+				s_buf = source.buf();
+			}
+
+			let remaining = slice.len();
+			try_read_exact_discontiguous(source, buf, remaining)
+		}
+		Err(error) => Err(error)
+	}
 }
 
 #[cfg(feature = "alloc")]
@@ -276,5 +370,97 @@ pub(crate) fn default_read_utf8<'a>(
 			source.read_bytes(&mut b[len..])
 				  .map(<[u8]>::len)
 		})
+	}
+}
+
+#[cfg(all(feature = "std", feature = "alloc"))]
+#[cfg(test)]
+mod read_exact_test {
+	use std::assert_matches::assert_matches;
+	use proptest::prelude::*;
+	use alloc::vec::from_elem;
+	use std::iter::repeat;
+	use proptest::collection::vec;
+	use crate::{BufferAccess, DataSource, Result};
+
+	struct FakeBufSource {
+		source: Vec<u8>,
+		buffer: Vec<u8>
+	}
+
+	#[cfg(feature = "nightly_specialization")]
+	impl BufferAccess for FakeBufSource {
+		fn buf_capacity(&self) -> usize {
+			self.buffer.capacity()
+		}
+
+		fn buf(&self) -> &[u8] {
+			&self.buffer
+		}
+
+		fn fill_buf(&mut self) -> Result<&[u8]> {
+			let Self { source, buffer } = self;
+			let len = buffer.len();
+			buffer.extend(repeat(0).take(buffer.capacity() - len));
+			let source_slice = &mut &source[..];
+			let consumed = source_slice.read_bytes(&mut buffer[len..])?.len();
+			source.consume(consumed);
+			buffer.truncate(consumed + len);
+			Ok(buffer)
+		}
+
+		fn clear_buf(&mut self) {
+			self.buffer.clear();
+		}
+
+		fn consume(&mut self, count: usize) {
+			self.buffer.consume(count);
+		}
+	}
+
+	proptest! {
+		#[test]
+		fn read_exact_end_of_stream(source in vec(any::<u8>(), 1..=256)) {
+			let mut buf = from_elem(0, source.len() + 1);
+			assert_matches!(
+				super::default_read_exact_bytes(&mut &*source, &mut buf),
+				Err(super::Error::End { .. })
+			)
+		}
+	}
+
+	proptest! {
+		#[test]
+		fn buf_read_exact_end_of_stream(source in vec(any::<u8>(), 1..=256)) {
+			let mut buf = from_elem(0, source.len() + 1);
+			assert_matches!(
+				super::buf_read_exact_bytes(&mut &*source, &mut buf),
+				Err(super::Error::End { .. })
+			)
+		}
+	}
+
+	#[cfg(feature = "nightly_specialization")]
+	proptest! {
+		#[test]
+		fn read_exact_insufficient_buffer(source in vec(any::<u8>(), 2..=256)) {
+			let source_len = source.len();
+			let buffer = Vec::with_capacity(source_len - 1);
+			let mut source = FakeBufSource { source, buffer };
+			let mut target = from_elem(0, source_len);
+			source.read_exact_bytes(&mut target).map(<[u8]>::len).unwrap();
+		}
+	}
+
+	#[cfg(feature = "nightly_specialization")]
+	proptest! {
+		#[test]
+		fn read_exact_buffered(source in vec(any::<u8>(), 1..=256)) {
+			let source_len = source.len();
+			let buffer = Vec::with_capacity(source_len + 1);
+			let mut source = FakeBufSource { source, buffer };
+			let mut target = from_elem(0, source_len);
+			source.read_exact_bytes(&mut target).map(<[u8]>::len).unwrap();
+		}
 	}
 }

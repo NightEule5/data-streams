@@ -56,7 +56,7 @@ impl BufferAccess for &[u8] {
 	}
 
 	fn consume(&mut self, count: usize) {
-		*self = &self[..count];
+		*self = &self[count..];
 	}
 }
 
@@ -125,4 +125,12 @@ fn mut_slice_push_u8<T>(
 		*sink = &mut take(sink)[1..];
 		Ok(())
 	}
+}
+
+pub(crate) fn read_bytes_infallible<'a>(source: &mut &[u8], sink: &'a mut [u8]) -> &'a [u8] {
+	let len = source.len().min(sink.len());
+	let (filled, unfilled) = sink.split_at_mut(len);
+	filled.copy_from_slice(&source[..len]);
+	*source = &source[len..];
+	unfilled
 }
