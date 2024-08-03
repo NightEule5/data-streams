@@ -300,7 +300,7 @@ fn try_read_exact_discontiguous<'a>(
 	remaining: usize
 ) -> Result<&'a [u8]> {
 	let filled = buf.len() - remaining;
-	let read_count = source.read_bytes(&mut buf[..filled])?.len();
+	let read_count = source.read_bytes(&mut buf[filled..])?.len();
 	if read_count < remaining {
 		if source.available() < remaining {
 			// Buffer was exhausted, meaning the stream ended prematurely
@@ -331,7 +331,7 @@ fn default_read_exact_bytes<'a>(source: &mut (impl DataSource + ?Sized), buf: &'
 }
 
 #[cfg(any(feature = "nightly_specialization", test))]
-fn buf_read_exact_bytes<'a>(source: &mut (impl BufferAccess + ?Sized), buf: &'a mut [u8]) -> Result<&'a [u8]> {
+fn buf_read_exact_bytes<'a>(source: &mut (impl BufferAccess + DataSource + ?Sized), buf: &'a mut [u8]) -> Result<&'a [u8]> {
 	let len = buf.len();
 	match source.require(len) {
 		Ok(()) => try_read_exact_contiguous(source, buf),
@@ -379,6 +379,7 @@ mod read_exact_test {
 	use std::assert_matches::assert_matches;
 	use proptest::prelude::*;
 	use alloc::vec::from_elem;
+	use std::iter::repeat;
 	use proptest::collection::vec;
 	use crate::{BufferAccess, DataSource, Result};
 
@@ -400,10 +401,10 @@ mod read_exact_test {
 		fn fill_buf(&mut self) -> Result<&[u8]> {
 			let Self { source, buffer } = self;
 			let len = buffer.len();
-			buffer.fill(0);
+			buffer.extend(repeat(0).take(buffer.capacity() - len));
 			let source_slice = &mut &source[..];
 			let consumed = source_slice.read_bytes(&mut buffer[len..])?.len();
-			source.drain(..consumed);
+			source.consume(consumed);
 			buffer.truncate(consumed + len);
 			Ok(buffer)
 		}
@@ -413,11 +414,7 @@ mod read_exact_test {
 		}
 
 		fn consume(&mut self, count: usize) {
-			if count == self.buffer.len() {
-				self.clear_buf();
-			} else {
-				self.buffer.drain(..count);
-			}
+			self.buffer.consume(count);
 		}
 	}
 
