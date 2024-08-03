@@ -7,8 +7,11 @@ use alloc::string::String;
 use alloc::boxed::Box;
 use bytemuck::Pod;
 use num_traits::PrimInt;
-use crate::{BufferAccess, DataSink, DataSource, Result};
+use crate::{BufferAccess, DataSink, Result};
+#[cfg(not(feature = "nightly_specialization"))]
+use crate::DataSource;
 use crate::sink::WriteSpec;
+#[cfg(not(feature = "nightly_specialization"))]
 use crate::source::{default_read_array, ReadSpec};
 
 // Todo: DataSource couldn't be implemented for &mut <source> when specialization

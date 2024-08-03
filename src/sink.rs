@@ -3,7 +3,7 @@
 
 use num_traits::PrimInt;
 use bytemuck::{bytes_of, Pod};
-use crate::{Error, Result};
+use crate::Result;
 
 /// A sink stream of data.
 pub trait DataSink {

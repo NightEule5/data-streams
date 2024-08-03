@@ -61,6 +61,7 @@
 #![cfg_attr(feature = "nightly_uninit_slice", feature(maybe_uninit_write_slice))]
 #![cfg_attr(test, feature(assert_matches))]
 #![allow(incomplete_features)]
+#![deny(clippy::pedantic)]
 
 #[cfg(feature = "alloc")]
 extern crate alloc;

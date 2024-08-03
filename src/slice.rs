@@ -22,10 +22,7 @@ impl DataSource for &[u8] {
 	}
 	
 	fn read_bytes<'a>(&mut self, buf: &'a mut [u8]) -> Result<&'a [u8]> {
-		let len = self.len().min(buf.len());
-		buf[..len].copy_from_slice(&self[..len]);
-		*self = &self[len..];
-		Ok(&buf[..len])
+		Ok(read_bytes_infallible(self, buf))
 	}
 
 	#[cfg(feature = "alloc")]

@@ -5,7 +5,9 @@
 use alloc::string::String;
 use bytemuck::{bytes_of_mut, Pod};
 use num_traits::PrimInt;
-use crate::{Error, Result, slice};
+use crate::{Error, Result};
+#[cfg(any(feature = "nightly_specialization", test))]
+use crate::slice;
 
 /// A source stream of data.
 pub trait DataSource {
@@ -243,10 +245,12 @@ impl<T: BufferAccess + ?Sized> DataSource for T {
 	}
 }
 
+#[allow(dead_code)]
 pub(crate) fn default_available(source: &(impl BufferAccess + ?Sized)) -> usize {
 	source.buf().len()
 }
 
+#[allow(dead_code)]
 pub(crate) fn default_request(source: &mut (impl BufferAccess + DataSource + ?Sized), count: usize) -> Result<bool> {
 	if source.available() < count {
 		let buf_len = default_available(source);
@@ -264,6 +268,7 @@ pub(crate) fn default_request(source: &mut (impl BufferAccess + DataSource + ?Si
 	}
 }
 
+#[allow(dead_code)]
 pub(crate) fn default_skip(source: &mut (impl BufferAccess + DataSource + ?Sized), mut count: usize) -> Result<usize> {
 	let avail = source.available();
 	count = count.min(avail);
