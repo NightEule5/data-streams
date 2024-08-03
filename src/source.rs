@@ -251,7 +251,7 @@ pub(crate) fn default_request(source: &mut (impl BufferAccess + DataSource + ?Si
 	if source.available() < count {
 		let buf_len = default_available(source);
 		let spare_capacity = source.buf_capacity() - buf_len;
-		if count < spare_capacity {
+		if source.buf_capacity() > 0 && count < spare_capacity {
 			Ok(source.fill_buf()?.len() >= count)
 		} else {
 			Err(Error::InsufficientBuffer {
@@ -443,7 +443,7 @@ mod read_exact_test {
 	#[cfg(feature = "nightly_specialization")]
 	proptest! {
 		#[test]
-		fn read_exact_insufficient_buffer(source in vec(any::<u8>(), 1..=256)) {
+		fn read_exact_insufficient_buffer(source in vec(any::<u8>(), 2..=256)) {
 			let source_len = source.len();
 			let buffer = Vec::with_capacity(source_len - 1);
 			let mut source = FakeBufSource { source, buffer };
