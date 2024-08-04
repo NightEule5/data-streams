@@ -3,12 +3,19 @@
 
 #![cfg(feature = "alloc")]
 
-use alloc::collections::VecDeque;
-use alloc::string::String;
-use alloc::vec::Vec;
+use alloc::{
+	collections::VecDeque,
+	string::String,
+	vec::Vec
+};
 use core::str::from_utf8_unchecked;
 use simdutf8::compat::from_utf8;
-use crate::{BufferAccess, DataSink, DataSource, Result};
+use crate::{
+	BufferAccess,
+	DataSink,
+	DataSource,
+	Result,
+};
 
 impl DataSource for Vec<u8> {
 	fn available(&self) -> usize { self.len() }
@@ -19,13 +26,13 @@ impl DataSource for Vec<u8> {
 
 	fn skip(&mut self, mut count: usize) -> Result<usize> {
 		count = count.min(self.len());
-		self.consume(count);
+		self.drain_buffer(count);
 		Ok(count)
 	}
 
 	fn read_bytes<'a>(&mut self, buf: &'a mut [u8]) -> Result<&'a [u8]> {
 		let slice = self.as_slice().read_bytes(buf)?;
-		self.consume(slice.len());
+		self.drain_buffer(slice.len());
 		Ok(slice)
 	}
 
@@ -46,7 +53,7 @@ impl DataSource for Vec<u8> {
 		let bytes = &self[..count];
 		let start_len = buf.len();
 		buf.push_str(from_utf8(bytes)?);
-		self.consume(count);
+		self.drain_buffer(count);
 		Ok(&buf[start_len..])
 	}
 
@@ -56,19 +63,19 @@ impl DataSource for Vec<u8> {
 }
 
 impl BufferAccess for Vec<u8> {
-	fn buf_capacity(&self) -> usize { self.capacity() }
+	fn buffer_capacity(&self) -> usize { self.capacity() }
 
-	fn buf(&self) -> &[u8] { self }
+	fn buffer(&self) -> &[u8] { self }
 
-	fn fill_buf(&mut self) -> Result<&[u8]> {
+	fn fill_buffer(&mut self) -> Result<&[u8]> {
 		Ok(self) // Nothing to read
 	}
 
-	fn clear_buf(&mut self) {
+	fn clear_buffer(&mut self) {
 		self.clear();
 	}
 
-	fn consume(&mut self, count: usize) {
+	fn drain_buffer(&mut self, count: usize) {
 		if count == self.len() {
 			self.clear();
 		} else {
@@ -104,7 +111,7 @@ impl DataSource for VecDeque<u8> {
 
 	fn skip(&mut self, mut count: usize) -> Result<usize> {
 		count = count.min(self.len());
-		self.consume(count);
+		self.drain_buffer(count);
 		Ok(count)
 	}
 
@@ -114,7 +121,7 @@ impl DataSource for VecDeque<u8> {
 		let mut count = a.read_bytes(slice)?.len();
 		slice = &mut slice[count..];
 		count += b.read_bytes(slice)?.len();
-		self.consume(count);
+		self.drain_buffer(count);
 		Ok(&buf[..count])
 	}
 
@@ -126,7 +133,7 @@ impl DataSource for VecDeque<u8> {
 				// The deque is contiguous, validate its data in one go.
 				let bytes = &bytes[..count];
 				buf.push_str(from_utf8(bytes)?);
-				self.consume(count);
+				self.drain_buffer(count);
 			}
 			(mut a, mut b) => {
 				// The deque is discontiguous. Validate the first slice, then the
@@ -174,19 +181,19 @@ impl DataSource for VecDeque<u8> {
 }
 
 impl BufferAccess for VecDeque<u8> {
-	fn buf_capacity(&self) -> usize { self.capacity() }
+	fn buffer_capacity(&self) -> usize { self.capacity() }
 
-	fn buf(&self) -> &[u8] { self.as_slices().0 }
+	fn buffer(&self) -> &[u8] { self.as_slices().0 }
 
-	fn fill_buf(&mut self) -> Result<&[u8]> {
-		Ok((*self).buf()) // Nothing to read
+	fn fill_buffer(&mut self) -> Result<&[u8]> {
+		Ok((*self).buffer()) // Nothing to read
 	}
 
-	fn clear_buf(&mut self) {
+	fn clear_buffer(&mut self) {
 		self.clear();
 	}
 
-	fn consume(&mut self, count: usize) {
+	fn drain_buffer(&mut self, count: usize) {
 		if self.len() == count {
 			self.clear();
 		} else {

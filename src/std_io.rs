@@ -4,17 +4,33 @@
 
 #[cfg(feature = "alloc")]
 use alloc::string::String;
-use std::io::{BufRead, BufReader, BufWriter, Cursor, Empty, ErrorKind, Read, Repeat, Sink, Take, Write};
+use std::io::{
+	BufRead,
+	BufReader,
+	BufWriter,
+	Cursor,
+	Empty,
+	ErrorKind,
+	Read,
+	Repeat,
+	Sink,
+	Take,
+	Write,
+};
+#[cfg(feature = "alloc")]
 use std::iter::repeat;
-use crate::{Error, Result};
-use crate::sink::DataSink;
-use crate::source::{BufferAccess, DataSource, default_skip};
+use crate::{
+	Result,
+	Error,
+	DataSink,
+	BufferAccess,
+	DataSource,
+	source::default_skip,
+};
 
 impl<R: Read + ?Sized> DataSource for BufReader<R> {
 	#[cfg(not(feature = "nightly_specialization"))]
-	fn available(&self) -> usize {
-		crate::source::default_available(self)
-	}
+	fn available(&self) -> usize { self.buffer_count() }
 
 	#[cfg(not(feature = "nightly_specialization"))]
 	fn request(&mut self, count: usize) -> Result<bool> {
@@ -40,20 +56,16 @@ impl<R: Read + ?Sized> DataSource for BufReader<R> {
 }
 
 impl<R: Read + ?Sized> BufferAccess for BufReader<R> {
-	fn buf_capacity(&self) -> usize { self.capacity() }
+	fn buffer_capacity(&self) -> usize { self.capacity() }
 
-	fn buf(&self) -> &[u8] { self.buffer() }
+	fn buffer(&self) -> &[u8] { self.buffer() }
 
-	fn fill_buf(&mut self) -> Result<&[u8]> {
-		Ok(BufRead::fill_buf(self)?)
+	fn fill_buffer(&mut self) -> Result<&[u8]> {
+		Ok(self.fill_buf()?)
 	}
 
-	fn clear_buf(&mut self) {
-		BufferAccess::consume(self, self.available());
-	}
-
-	fn consume(&mut self, count: usize) {
-		BufRead::consume(self, count);
+	fn drain_buffer(&mut self, count: usize) {
+		self.consume(count);
 	}
 }
 
@@ -66,7 +78,7 @@ impl<W: Write + ?Sized> DataSink for BufWriter<W> {
 
 impl<T: AsRef<[u8]>> DataSource for Cursor<T> {
 	#[cfg(not(feature = "nightly_specialization"))]
-	fn available(&self) -> usize { crate::source::default_available(self) }
+	fn available(&self) -> usize { self.buffer_count() }
 
 	fn request(&mut self, count: usize) -> Result<bool> {
 		Ok(self.available() >= count)
@@ -74,7 +86,7 @@ impl<T: AsRef<[u8]>> DataSource for Cursor<T> {
 
 	fn skip(&mut self, mut count: usize) -> Result<usize> {
 		count = count.min(self.available());
-		BufRead::consume(self, count);
+		self.consume(count);
 		Ok(count)
 	}
 
@@ -94,25 +106,26 @@ impl<T: AsRef<[u8]>> DataSource for Cursor<T> {
 }
 
 impl<T: AsRef<[u8]>> BufferAccess for Cursor<T> {
-	fn buf_capacity(&self) -> usize { cursor_as_slice(self).len() }
+	fn buffer_capacity(&self) -> usize { cursor_as_slice(self).len() }
 
-	fn buf(&self) -> &[u8] {
+	fn buffer_count(&self) -> usize {
+		self.buffer_capacity()
+			.min(self.position() as usize)
+	}
+
+	fn buffer(&self) -> &[u8] {
 		// See Cursor::fill_buf and Cursor::split
 		let slice = cursor_as_slice(self);
-		let start = (self.position() as usize).min(slice.len());
+		let start = self.buffer_count();
 		&slice[start..]
 	}
 
-	fn fill_buf(&mut self) -> Result<&[u8]> {
-		Ok((*self).buf()) // Nothing to read
+	fn fill_buffer(&mut self) -> Result<&[u8]> {
+		Ok((*self).buffer()) // Nothing to read
 	}
 
-	fn clear_buf(&mut self) {
-		BufferAccess::consume(self, self.buf_capacity().min(self.position() as usize));
-	}
-
-	fn consume(&mut self, count: usize) {
-		BufRead::consume(self, count);
+	fn drain_buffer(&mut self, count: usize) {
+		self.consume(count);
 	}
 }
 
@@ -134,7 +147,7 @@ fn cursor_as_slice<T: AsRef<[u8]>>(cursor: &Cursor<T>) -> &[u8] {
 
 impl<T: BufferAccess + BufRead> DataSource for Take<T> {
 	#[cfg(not(feature = "nightly_specialization"))]
-	fn available(&self) -> usize { crate::source::default_available(self) }
+	fn available(&self) -> usize { self.buffer_count() }
 
 	#[cfg(not(feature = "nightly_specialization"))]
 	fn request(&mut self, count: usize) -> Result<bool> {
@@ -160,24 +173,26 @@ impl<T: BufferAccess + BufRead> DataSource for Take<T> {
 }
 
 impl<T: BufferAccess + BufRead> BufferAccess for Take<T> {
-	fn buf_capacity(&self) -> usize { self.get_ref().buf_capacity() }
+	fn buffer_capacity(&self) -> usize { self.get_ref().buffer_capacity() }
+
+	fn buffer_count(&self) -> usize {
+		self.get_ref()
+			.buffer_count()
+			.min(self.limit() as usize)
+	}
 	
-	fn buf(&self) -> &[u8] {
-		let buf = self.get_ref().buf();
-		let len = (self.limit() as usize).min(buf.len());
+	fn buffer(&self) -> &[u8] {
+		let buf = self.get_ref().buffer();
+		let len = self.buffer_count();
 		&buf[..len]
 	}
 
-	fn fill_buf(&mut self) -> Result<&[u8]> {
-		Ok(BufRead::fill_buf(self)?)
+	fn fill_buffer(&mut self) -> Result<&[u8]> {
+		Ok(self.fill_buf()?)
 	}
 
-	fn clear_buf(&mut self) {
-		BufferAccess::consume(self, self.available());
-	}
-
-	fn consume(&mut self, count: usize) {
-		BufRead::consume(self, count);
+	fn drain_buffer(&mut self, count: usize) {
+		self.consume(count);
 	}
 }
 
@@ -253,7 +268,8 @@ impl DataSource for Repeat {
 		buf.fill(byte);
 		Ok(buf)
 	}
-
+	
+	#[cfg(feature = "alloc")]
 	fn read_utf8<'a>(&mut self, count: usize, buf: &'a mut String) -> Result<&'a str> {
 		let bytes @ [byte] = &[get_repeated_byte(self)];
 		if byte.is_ascii() {
@@ -271,6 +287,7 @@ impl DataSource for Repeat {
 
 	}
 
+	#[cfg(feature = "alloc")]
 	fn read_utf8_to_end<'a>(&mut self, _: &'a mut String) -> Result<&'a str> {
 		Err(Error::NoEnd)
 	}
@@ -296,7 +313,7 @@ fn buf_read_skip(source: &mut (impl BufferAccess + DataSource + ?Sized), count: 
 	skip_count
 }
 
-fn buf_read_bytes<'a>(source: &mut (impl BufferAccess + DataSource + Read + ?Sized), buf: &'a mut [u8]) -> Result<&'a [u8]> {
+fn buf_read_bytes<'a>(source: &mut (impl Read + ?Sized), buf: &'a mut [u8]) -> Result<&'a [u8]> {
 	use ErrorKind::Interrupted;
 
 	let mut count = 0;
@@ -319,9 +336,10 @@ fn buf_read_exact_bytes<'a>(source: &mut (impl Read + ?Sized), buf: &'a mut [u8]
 	}
 }
 
+#[cfg(feature = "alloc")]
 fn buf_read_utf8_to_end<'a>(source: &mut (impl Read + ?Sized), buf: &'a mut String) -> Result<&'a str> {
 	unsafe {
-		super::append_utf8(buf, |b|
+		crate::source::append_utf8(buf, |b|
 			Ok(source.read_to_end(b)?)
 		)
 	}

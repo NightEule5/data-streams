@@ -4,8 +4,13 @@
 use alloc::string::String;
 #[cfg(feature = "alloc")]
 use simdutf8::compat::from_utf8;
-use crate::{DataSink, Error, Result};
-use crate::source::{BufferAccess, DataSource};
+use crate::{
+	Error,
+	DataSink,
+	Result,
+	BufferAccess,
+	DataSource,
+};
 
 impl DataSource for &[u8] {
 	fn available(&self) -> usize { self.len() }
@@ -15,7 +20,7 @@ impl DataSource for &[u8] {
 
 	fn skip(&mut self, mut count: usize) -> Result<usize> {
 		count = count.min(self.len());
-		self.consume(count);
+		self.drain_buffer(count);
 		Ok(count)
 	}
 	
@@ -40,17 +45,16 @@ impl DataSource for &[u8] {
 }
 
 impl BufferAccess for &[u8] {
-	fn buf_capacity(&self) -> usize { self.len() }
+	fn buffer_capacity(&self) -> usize { self.len() }
+	fn buffer_count(&self) -> usize { self.len() }
+	fn buffer(&self) -> &[u8] { self }
+	fn fill_buffer(&mut self) -> Result<&[u8]> { Ok(self) }
 
-	fn buf(&self) -> &[u8] { self }
-
-	fn fill_buf(&mut self) -> Result<&[u8]> { Ok(self) }
-
-	fn clear_buf(&mut self) {
+	fn clear_buffer(&mut self) {
 		*self = &[];
 	}
 
-	fn consume(&mut self, count: usize) {
+	fn drain_buffer(&mut self, count: usize) {
 		*self = &self[count..];
 	}
 }
@@ -103,7 +107,7 @@ fn mut_slice_write_bytes<T>(
 	copy_from_slice(target, &buf[..len]);
 	let remaining = buf.len() - len;
 	if remaining > 0 {
-		Err(Error::Overflow { remaining })
+		Err(Error::overflow(remaining))
 	} else {
 		Ok(())
 	}
@@ -116,7 +120,7 @@ fn mut_slice_push_u8<T>(
 	map: impl FnOnce(u8) -> T
 ) -> Result {
 	if sink.is_empty() {
-		Err(Error::Overflow { remaining: 1 })
+		Err(Error::overflow(1))
 	} else {
 		sink[0] = map(value);
 		*sink = &mut take(sink)[1..];

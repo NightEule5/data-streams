@@ -15,7 +15,7 @@ impl DataSink for BorrowedBuf<'_> {
 impl DataSink for BorrowedCursor<'_> {
 	fn write_bytes(&mut self, buf: &[u8]) -> Result {
 		if buf.len() > self.capacity() {
-			return Err(Error::Overflow { remaining: self.capacity() - buf.len() })
+			return Err(Error::overflow(self.capacity() - buf.len()))
 		}
 		
 		self.append(buf);

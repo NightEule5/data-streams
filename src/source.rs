@@ -2,12 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #[cfg(feature = "alloc")]
-use alloc::string::String;
+use alloc::{string::String, vec::Vec};
 use bytemuck::{bytes_of_mut, Pod};
 use num_traits::PrimInt;
 use crate::{Error, Result};
-#[cfg(any(feature = "nightly_specialization", test))]
-use crate::slice;
 
 /// A source stream of data.
 pub trait DataSource {
@@ -44,7 +42,7 @@ pub trait DataSource {
 		if self.request(count)? {
 			Ok(())
 		} else {
-			Err(Error::End { required_count: count })
+			Err(Error::end(count))
 		}
 	}
 
@@ -90,126 +88,126 @@ pub trait DataSource {
 	/// 
 	/// Returns [`Error::End`] if the stream ends before exactly `1` byte can be
 	/// read.
-	fn read_u8(&mut self) -> Result<u8> { self.read_int_be_spec() }
+	fn read_u8(&mut self) -> Result<u8> { self.read_data() }
 	/// Reads an [`i8`].
 	///
 	/// # Errors
 	///
 	/// Returns [`Error::End`] if the stream ends before exactly `1` byte can be
 	/// read.
-	fn read_i8(&mut self) -> Result<i8> { self.read_int_be_spec() }
+	fn read_i8(&mut self) -> Result<i8> { self.read_data() }
 	/// Reads a big-endian [`u16`].
 	///
 	/// # Errors
 	///
 	/// Returns [`Error::End`] if the stream ends before exactly `2` bytes can be
 	/// read.
-	fn read_u16(&mut self) -> Result<u16> { self.read_int_be_spec() }
+	fn read_u16(&mut self) -> Result<u16> { self.read_int() }
 	/// Reads a big-endian [`i16`].
 	///
 	/// # Errors
 	///
 	/// Returns [`Error::End`] if the stream ends before exactly `2` bytes can be
 	/// read.
-	fn read_i16(&mut self) -> Result<i16> { self.read_int_be_spec() }
+	fn read_i16(&mut self) -> Result<i16> { self.read_int() }
 	/// Reads a little-endian [`u16`].
 	///
 	/// # Errors
 	///
 	/// Returns [`Error::End`] if the stream ends before exactly `2` bytes can be
 	/// read.
-	fn read_u16_le(&mut self) -> Result<u16> { self.read_int_le_spec() }
+	fn read_u16_le(&mut self) -> Result<u16> { self.read_int_le() }
 	/// Reads a little-endian [`i16`].
 	///
 	/// # Errors
 	///
 	/// Returns [`Error::End`] if the stream ends before exactly `2` bytes can be
 	/// read.
-	fn read_i16_le(&mut self) -> Result<i16> { self.read_int_le_spec() }
+	fn read_i16_le(&mut self) -> Result<i16> { self.read_int_le() }
 	/// Reads a big-endian [`u32`].
 	///
 	/// # Errors
 	///
 	/// Returns [`Error::End`] if the stream ends before exactly `4` bytes can be
 	/// read.
-	fn read_u32(&mut self) -> Result<u32> { self.read_int_be_spec() }
+	fn read_u32(&mut self) -> Result<u32> { self.read_int() }
 	/// Reads a big-endian [`i32`].
 	///
 	/// # Errors
 	///
 	/// Returns [`Error::End`] if the stream ends before exactly `4` bytes can be
 	/// read.
-	fn read_i32(&mut self) -> Result<i32> { self.read_int_be_spec() }
+	fn read_i32(&mut self) -> Result<i32> { self.read_int() }
 	/// Reads a little-endian [`u32`].
 	///
 	/// # Errors
 	///
 	/// Returns [`Error::End`] if the stream ends before exactly `4` bytes can be
 	/// read.
-	fn read_u32_le(&mut self) -> Result<u32> { self.read_int_le_spec() }
+	fn read_u32_le(&mut self) -> Result<u32> { self.read_int_le() }
 	/// Reads a little-endian [`i32`].
 	///
 	/// # Errors
 	///
 	/// Returns [`Error::End`] if the stream ends before exactly `4` bytes can be
 	/// read.
-	fn read_i32_le(&mut self) -> Result<i32> { self.read_int_le_spec() }
+	fn read_i32_le(&mut self) -> Result<i32> { self.read_int_le() }
 	/// Reads a big-endian [`u64`].
 	///
 	/// # Errors
 	///
 	/// Returns [`Error::End`] if the stream ends before exactly `8` bytes can be
 	/// read.
-	fn read_u64(&mut self) -> Result<u64> { self.read_int_be_spec() }
+	fn read_u64(&mut self) -> Result<u64> { self.read_int() }
 	/// Reads a big-endian [`i64`].
 	///
 	/// # Errors
 	///
 	/// Returns [`Error::End`] if the stream ends before exactly `8` bytes can be
 	/// read.
-	fn read_i64(&mut self) -> Result<i64> { self.read_int_be_spec() }
+	fn read_i64(&mut self) -> Result<i64> { self.read_int() }
 	/// Reads a little-endian [`u64`].
 	///
 	/// # Errors
 	///
 	/// Returns [`Error::End`] if the stream ends before exactly `8` bytes can be
 	/// read.
-	fn read_u64_le(&mut self) -> Result<u64> { self.read_int_le_spec() }
+	fn read_u64_le(&mut self) -> Result<u64> { self.read_int_le() }
 	/// Reads a little-endian [`i64`].
 	///
 	/// # Errors
 	///
 	/// Returns [`Error::End`] if the stream ends before exactly `8` bytes can be
 	/// read.
-	fn read_i64_le(&mut self) -> Result<i64> { self.read_int_le_spec() }
+	fn read_i64_le(&mut self) -> Result<i64> { self.read_int_le() }
 	/// Reads a big-endian [`u128`].
 	///
 	/// # Errors
 	///
 	/// Returns [`Error::End`] if the stream ends before exactly `16` bytes can be
 	/// read.
-	fn read_u128(&mut self) -> Result<u128> { self.read_int_be_spec() }
+	fn read_u128(&mut self) -> Result<u128> { self.read_int() }
 	/// Reads a big-endian [`i128`].
 	///
 	/// # Errors
 	///
 	/// Returns [`Error::End`] if the stream ends before exactly `16` bytes can be
 	/// read.
-	fn read_i128(&mut self) -> Result<i128> { self.read_int_be_spec() }
+	fn read_i128(&mut self) -> Result<i128> { self.read_int() }
 	/// Reads a little-endian [`u128`].
 	///
 	/// # Errors
 	///
 	/// Returns [`Error::End`] if the stream ends before exactly `16` bytes can be
 	/// read.
-	fn read_u128_le(&mut self) -> Result<u128> { self.read_int_le_spec() }
+	fn read_u128_le(&mut self) -> Result<u128> { self.read_int_le() }
 	/// Reads a little-endian [`i128`].
 	///
 	/// # Errors
 	///
 	/// Returns [`Error::End`] if the stream ends before exactly `16` bytes can be
 	/// read.
-	fn read_i128_le(&mut self) -> Result<i128> { self.read_int_le_spec() }
+	fn read_i128_le(&mut self) -> Result<i128> { self.read_int_le() }
 	/// Reads a big-endian [`usize`]. To make streams consistent across platforms,
 	/// [`usize`] is fixed to the size of [`u64`] regardless of the target platform.
 	///
@@ -251,36 +249,6 @@ pub trait DataSource {
 		self.read_i64_le().map(|i| i as isize)
 	}
 
-	/// Reads a big-endian integer.
-	///
-	/// # Errors
-	///
-	/// Returns [`Error::End`] if the stream ends before exactly the type's size in
-	/// bytes can be read.
-	fn read_int<T: PrimInt + Pod>(&mut self) -> Result<T> where Self: Sized {
-		self.read_int_be_spec()
-	}
-	/// Reads a little-endian integer.
-	///
-	/// # Errors
-	///
-	/// Returns [`Error::End`] if the stream ends before exactly the type's size in
-	/// bytes can be read.
-	fn read_int_le<T: PrimInt + Pod>(&mut self) -> Result<T> where Self: Sized {
-		self.read_int_le_spec()
-	}
-
-	/// Reads a value of generic type `T` supporting an arbitrary bit pattern. See
-	/// [`Pod`].
-	///
-	/// # Errors
-	///
-	/// Returns [`Error::End`] if the stream ends before exactly the type's size in
-	/// bytes can be read.
-	fn read_data<T: Pod>(&mut self) -> Result<T> where Self: Sized {
-		self.read_data_spec()
-	}
-
 	/// Reads up to `count` bytes of UTF-8 into `buf`, returning the string read.
 	/// If invalid bytes are encountered, an error is returned and `buf` is unchanged.
 	/// In this case, the stream is left in a state with up to `count` bytes consumed
@@ -311,54 +279,79 @@ pub trait DataSource {
 	fn read_utf8_to_end<'a>(&mut self, buf: &'a mut String) -> Result<&'a str>;
 }
 
-/// Helper extension trait for reading generic data from an unsized source.
-pub(crate) trait ReadSpec<T: Pod>: DataSource {
-	fn read_int_be_spec(&mut self) -> Result<T> where T: PrimInt {
-		self.read_data_spec().map(T::from_be)
+/// Reads generic data from a [source](DataSource).
+pub trait GenericDataSource<T: Pod>: DataSource {
+	/// Reads a big-endian integer.
+	///
+	/// # Errors
+	///
+	/// Returns [`Error::End`] if the stream ends before exactly the type's size in
+	/// bytes can be read.
+	fn read_int(&mut self) -> Result<T> where T: PrimInt {
+		self.read_data().map(T::from_be)
 	}
-	fn read_int_le_spec(&mut self) -> Result<T> where T: PrimInt {
-		self.read_data_spec().map(T::from_le)
+
+	/// Reads a little-endian integer.
+	///
+	/// # Errors
+	///
+	/// Returns [`Error::End`] if the stream ends before exactly the type's size in
+	/// bytes can be read.
+	fn read_int_le(&mut self) -> Result<T> where T: PrimInt {
+		self.read_data().map(T::from_le)
 	}
-	fn read_data_spec(&mut self) -> Result<T> {
+
+	/// Reads a value of generic type `T` supporting an arbitrary bit pattern. See
+	/// [`Pod`].
+	///
+	/// # Errors
+	///
+	/// Returns [`Error::End`] if the stream ends before exactly the type's size in
+	/// bytes can be read.
+	fn read_data(&mut self) -> Result<T> {
 		let mut value = T::zeroed();
 		self.read_exact_bytes(bytes_of_mut(&mut value))?;
 		Ok(value)
 	}
 }
 
-impl<S: DataSource + ?Sized, T: Pod> ReadSpec<T> for S { }
+impl<S: DataSource + ?Sized, T: Pod> GenericDataSource<T> for S { }
 
 /// Accesses a source's internal buffer.
 pub trait BufferAccess {
 	/// Returns the capacity of the internal buffer.
-	fn buf_capacity(&self) -> usize;
+	fn buffer_capacity(&self) -> usize;
+	/// Returns the byte count contained in the internal buffer.
+	fn buffer_count(&self) -> usize { self.buffer().len() }
 	/// Returns a slice over the filled portion of the internal buffer. This slice
 	/// may not contain the whole buffer, for example if it can't be represented as
 	/// just one slice.
-	fn buf(&self) -> &[u8];
+	fn buffer(&self) -> &[u8];
 	/// Fills the internal buffer from the underlying stream, returning its contents
 	/// if successful.
 	/// 
 	/// # Errors
 	/// 
 	/// Returns any IO errors encountered.
-	fn fill_buf(&mut self) -> Result<&[u8]>;
+	fn fill_buffer(&mut self) -> Result<&[u8]>;
 	/// Clears the internal buffer.
-	fn clear_buf(&mut self);
+	fn clear_buffer(&mut self) {
+		self.drain_buffer(self.buffer_count());
+	}
 	/// Consumes `count` bytes from the internal buffer. The `count` must be `<=`
-	/// the length of the slice returned by either [`buf`](Self::buf) or
-	/// [`fill_buf`](Self::fill_buf)
+	/// the length of the slice returned by either [`buffer`](Self::buffer) or
+	/// [`fill_buffer`](Self::fill_buffer)
 	/// 
 	/// # Panics
 	/// 
 	/// This method panics if `count` exceeds the buffer length.
-	fn consume(&mut self, count: usize);
+	fn drain_buffer(&mut self, count: usize);
 }
 
 #[cfg(feature = "nightly_specialization")]
 impl<T: BufferAccess + ?Sized> DataSource for T {
 	default fn available(&self) -> usize {
-		default_available(self)
+		self.buffer_count()
 	}
 
 	default fn request(&mut self, count: usize) -> Result<bool> {
@@ -373,8 +366,8 @@ impl<T: BufferAccess + ?Sized> DataSource for T {
 		let mut slice = &mut *buf;
 		while !slice.is_empty() {
 			let mut buf = match self.request(slice.len()) {
-				Ok(_) => self.buf(),
-				Err(Error::InsufficientBuffer { .. }) => self.fill_buf()?,
+				Ok(_) => self.buffer(),
+				Err(Error::InsufficientBuffer { .. }) => self.fill_buffer()?,
 				Err(error) => return Err(error)
 			};
 			if buf.is_empty() {
@@ -406,17 +399,12 @@ impl<T: BufferAccess + ?Sized> DataSource for T {
 }
 
 #[allow(dead_code)]
-pub(crate) fn default_available(source: &(impl BufferAccess + ?Sized)) -> usize {
-	source.buf().len()
-}
-
-#[allow(dead_code)]
 pub(crate) fn default_request(source: &mut (impl BufferAccess + DataSource + ?Sized), count: usize) -> Result<bool> {
 	if source.available() < count {
-		let buf_len = default_available(source);
-		let spare_capacity = source.buf_capacity() - buf_len;
-		if source.buf_capacity() > 0 && count < spare_capacity {
-			Ok(source.fill_buf()?.len() >= count)
+		let buf_len = source.buffer_count();
+		let spare_capacity = source.buffer_capacity() - buf_len;
+		if source.buffer_capacity() > 0 && count < spare_capacity {
+			Ok(source.fill_buffer()?.len() >= count)
 		} else {
 			Err(Error::InsufficientBuffer {
 				spare_capacity,
@@ -433,7 +421,7 @@ pub(crate) fn default_request(source: &mut (impl BufferAccess + DataSource + ?Si
 pub(crate) fn default_skip(source: &mut (impl BufferAccess + DataSource + ?Sized), mut count: usize) -> usize {
 	let avail = source.available();
 	count = count.min(avail);
-	source.consume(count);
+	source.drain_buffer(count);
 	// Guard against faulty implementations by verifying that the buffered
 	// bytes were removed.
 	assert_eq!(source.available(), avail.saturating_sub(count));
@@ -507,12 +495,12 @@ fn buf_read_exact_bytes<'a>(source: &mut (impl BufferAccess + DataSource + ?Size
 			// skipping the buffer.
 
 			let mut slice = &mut *buf;
-			let mut s_buf = source.buf();
+			let mut s_buf = source.buffer();
 			while !slice.is_empty() && !s_buf.is_empty() {
-				let len = slice::read_bytes_infallible(&mut s_buf, slice).len();
+				let len = crate::slice::read_bytes_infallible(&mut s_buf, slice).len();
 				slice = &mut slice[len..];
-				source.consume(len);
-				s_buf = source.buf();
+				source.drain_buffer(len);
+				s_buf = source.buffer();
 			}
 
 			let remaining = slice.len();
@@ -530,13 +518,46 @@ pub(crate) fn default_read_utf8<'a>(
 ) -> Result<&'a str> {
 	buf.reserve(count);
 	unsafe {
-		crate::append_utf8(buf, |b| {
+		append_utf8(buf, |b| {
 			let len = b.len();
 			b.set_len(len + count);
 			source.read_bytes(&mut b[len..])
 				  .map(<[u8]>::len)
 		})
 	}
+}
+
+#[cfg(feature = "alloc")]
+pub(crate) unsafe fn append_utf8<R>(buf: &mut String, read: R) -> Result<&str>
+where
+	R: FnOnce(&mut Vec<u8>) -> Result<usize> {
+	use simdutf8::compat::from_utf8;
+
+	// A drop guard which ensures the string is truncated to valid UTF-8 when out
+	// of scope. Starts by truncating to its original length, only allowing the
+	// string to grow after the new bytes are checked to be valid UTF-8.
+	struct Guard<'a> {
+		len: usize,
+		buf: &'a mut Vec<u8>
+	}
+
+	impl Drop for Guard<'_> {
+		fn drop(&mut self) {
+			unsafe {
+				self.buf.set_len(self.len);
+			}
+		}
+	}
+
+	let start;
+	{
+		let mut guard = Guard { len: buf.len(), buf: buf.as_mut_vec() };
+		let count = read(guard.buf)?;
+		from_utf8(&guard.buf[guard.len..][..count])?;
+		start = guard.len;
+		guard.len += count;
+	}
+	Ok(&buf[start..])
 }
 
 #[cfg(all(feature = "std", feature = "alloc"))]
@@ -559,31 +580,31 @@ mod read_exact_test {
 
 	#[cfg(feature = "nightly_specialization")]
 	impl BufferAccess for FakeBufSource {
-		fn buf_capacity(&self) -> usize {
+		fn buffer_capacity(&self) -> usize {
 			self.buffer.capacity()
 		}
 
-		fn buf(&self) -> &[u8] {
+		fn buffer(&self) -> &[u8] {
 			&self.buffer
 		}
 
-		fn fill_buf(&mut self) -> Result<&[u8]> {
+		fn fill_buffer(&mut self) -> Result<&[u8]> {
 			let Self { source, buffer } = self;
 			let len = buffer.len();
 			buffer.extend(repeat(0).take(buffer.capacity() - len));
 			let source_slice = &mut &source[..];
 			let consumed = source_slice.read_bytes(&mut buffer[len..])?.len();
-			source.consume(consumed);
+			source.drain_buffer(consumed);
 			buffer.truncate(consumed + len);
 			Ok(buffer)
 		}
 
-		fn clear_buf(&mut self) {
+		fn clear_buffer(&mut self) {
 			self.buffer.clear();
 		}
 
-		fn consume(&mut self, count: usize) {
-			self.buffer.consume(count);
+		fn drain_buffer(&mut self, count: usize) {
+			self.buffer.drain_buffer(count);
 		}
 	}
 
@@ -594,7 +615,7 @@ mod read_exact_test {
 			assert_matches!(
 				super::default_read_exact_bytes(&mut &*source, &mut buf),
 				Err(super::Error::End { .. })
-			)
+			);
 		}
 	}
 
@@ -605,7 +626,7 @@ mod read_exact_test {
 			assert_matches!(
 				super::buf_read_exact_bytes(&mut &*source, &mut buf),
 				Err(super::Error::End { .. })
-			)
+			);
 		}
 	}
 

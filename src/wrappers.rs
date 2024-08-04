@@ -5,14 +5,9 @@
 use alloc::string::String;
 #[cfg(feature = "alloc")]
 use alloc::boxed::Box;
-use bytemuck::Pod;
-use num_traits::PrimInt;
 use crate::{BufferAccess, DataSink, Result};
 #[cfg(not(feature = "nightly_specialization"))]
-use crate::DataSource;
-use crate::sink::WriteSpec;
-#[cfg(not(feature = "nightly_specialization"))]
-use crate::source::{default_read_array, ReadSpec};
+use crate::{DataSource, source::default_read_array};
 
 // Todo: DataSource couldn't be implemented for &mut <source> when specialization
 //  is enabled.
@@ -33,35 +28,33 @@ macro_rules! delegate_impl {
 }
 
 macro_rules! impl_buf_access {
-    ($($(#[$attr:meta])?
-	impl$(<$gen:ident$(: ?$bound:ident)?>)? for $ty:ty;)+) => {
+    ($($(#[$attr:meta])? impl<$gen:ident> for $ty:ty;)+) => {
 		$(
 		$(#[$attr])?
-		impl$(<$gen: BufferAccess$( + ?$bound)?>)? BufferAccess for $ty {
+		impl<$gen: BufferAccess + ?Sized> BufferAccess for $ty {
 			delegate_impl! {
 				with **self;
-				fn buf_capacity(&self) -> usize;
-				fn buf(&self) -> &[u8];
-				fn fill_buf(&mut self) -> Result<&[u8]>;
-				fn clear_buf(&mut self);
-				fn consume(&mut self, count: usize);
+				fn buffer_capacity(&self) -> usize;
+				fn buffer(&self) -> &[u8];
+				fn fill_buffer(&mut self) -> Result<&[u8]>;
+				fn clear_buffer(&mut self);
+				fn drain_buffer(&mut self, count: usize);
 			}
 		})+
 	};
 }
 
 impl_buf_access! {
-	impl<S: ?Sized> for &mut S;
+	impl<S> for &mut S;
 	#[cfg(feature = "alloc")]
-	impl<S: ?Sized> for Box<S>;
+	impl<S> for Box<S>;
 }
 
 macro_rules! impl_source {
-    ($($(#[$attr:meta])?
-	impl$(<$gen:ident$(: ?$bound:ident)?>)? for $ty:ty $({$($impl:item)+})?;)+) => {
+    ($($(#[$attr:meta])? impl<$gen:ident> for $ty:ty;)+) => {
 		$(
 		$(#[$attr])?
-		impl$(<$gen: DataSource$( + ?$bound)?>)? DataSource for $ty {
+		impl<$gen: DataSource + ?Sized> DataSource for $ty {
 			delegate_impl! {
 				with **self;
 				fn available(&self) -> usize;
@@ -100,7 +93,9 @@ macro_rules! impl_source {
 				(**self).read_exact_bytes(buf)
 			}
 
-			impl_source! { sized-impls $({$($impl)+})? }
+			fn read_array<const N: usize>(&mut self) -> Result<[u8; N]> {
+				default_read_array(&mut **self)
+			}
 
 			#[cfg(feature = "alloc")]
 			fn read_utf8<'a>(&mut self, count: usize, buf: &'a mut String) -> Result<&'a str> {
@@ -113,24 +108,6 @@ macro_rules! impl_source {
 			}
 		})+
 	};
-	(sized-impls {$($impl:item)+}) => { $($impl)+ };
-	(sized-impls) => {
-		fn read_array<const N: usize>(&mut self) -> Result<[u8; N]> {
-			(**self).read_array()
-		}
-
-		fn read_int<T: PrimInt + Pod>(&mut self) -> Result<T> {
-			(**self).read_int()
-		}
-
-		fn read_int_le<T: PrimInt + Pod>(&mut self) -> Result<T> {
-			(**self).read_int_le()
-		}
-
-		fn read_data<T: Pod>(&mut self) -> Result<T> {
-			(**self).read_data()
-		}
-	};
 }
 
 impl_source! {
@@ -139,55 +116,20 @@ impl_source! {
 	// compiler terms. I don't know a way around this issue, so we'll disable it when
 	// specialization is enabled. Fixing this down the line shouldn't be a breaking change.
 	#[cfg(not(feature = "nightly_specialization"))]
-	impl<S: ?Sized> for &mut S {
-		// No downstream implementation for these, because they're sized-only.
-		// Implement them with the defaults instead.
-
-		fn read_array<const N: usize>(&mut self) -> Result<[u8; N]> {
-			default_read_array(*self)
-		}
-
-		fn read_int<T: PrimInt + Pod>(&mut self) -> Result<T> {
-			(**self).read_int_be_spec()
-		}
-
-		fn read_int_le<T: PrimInt + Pod>(&mut self) -> Result<T> {
-			(**self).read_int_le_spec()
-		}
-
-		fn read_data<T: Pod>(&mut self) -> Result<T> {
-			(**self).read_data_spec()
-		}
-	};
+	impl<S> for &mut S;
 	#[cfg(all(feature = "alloc", not(feature = "nightly_specialization")))]
-	impl<S: ?Sized> for Box<S> {
-		fn read_array<const N: usize>(&mut self) -> Result<[u8; N]> {
-			default_read_array(&mut **self)
-		}
-
-		fn read_int<T: PrimInt + Pod>(&mut self) -> Result<T> {
-			(**self).read_int_be_spec()
-		}
-
-		fn read_int_le<T: PrimInt + Pod>(&mut self) -> Result<T> {
-			(**self).read_int_le_spec()
-		}
-
-		fn read_data<T: Pod>(&mut self) -> Result<T> {
-			(**self).read_data_spec()
-		}
-	};
+	impl<S> for Box<S>;
 }
 
 macro_rules! impl_sink {
-    ($($(#[$attr:meta])?
-	impl$(<$gen:ident$(: ?$bound:ident)?>)? for $ty:ty $({$($impl:item)+})?;)+) => {
+    ($($(#[$attr:meta])? impl<$gen:ident> for $ty:ty;)+) => {
 		$(
 		$(#[$attr])?
-		impl$(<$gen: DataSink$( + ?$bound)?>)? DataSink for $ty {
+		impl<$gen: DataSink + ?Sized> DataSink for $ty {
 			delegate_impl! {
 				with **self;
 				fn write_bytes(&mut self, buf: &[u8]) -> Result;
+				fn write_utf8(&mut self, value: &str) -> Result;
 				fn write_u8(&mut self, value: u8) -> Result;
 				fn write_i8(&mut self, value: i8) -> Result;
 				fn write_u16(&mut self, value: u16) -> Result;
@@ -210,26 +152,14 @@ macro_rules! impl_sink {
 				fn write_isize(&mut self, value: isize) -> Result;
 				fn write_usize_le(&mut self, value: usize) -> Result;
 				fn write_isize_le(&mut self, value: isize) -> Result;
-				fn write_utf8(&mut self, value: &str) -> Result;
 			}
-
-			fn write_int<T: PrimInt + Pod>(&mut self, value: T) -> Result {
-				(**self).write_int_be_spec(value)
-			}
-	
-			fn write_int_le<T: PrimInt + Pod>(&mut self, value: T) -> Result {
-				(**self).write_int_le_spec(value)
-			}
-	
-			fn write_data<T: Pod>(&mut self, value: T) -> Result {
-				(**self).write_data_spec(value)
-			}
-		})+
+		}
+		)+
 	};
 }
 
 impl_sink! {
-	impl<S: ?Sized> for &mut S;
+	impl<S> for &mut S;
 	#[cfg(feature = "alloc")]
-	impl<S: ?Sized> for Box<S>;
+	impl<S> for Box<S>;
 }
