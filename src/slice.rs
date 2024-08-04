@@ -8,9 +8,7 @@ use crate::{DataSink, Error, Result};
 use crate::source::{BufferAccess, DataSource};
 
 impl DataSource for &[u8] {
-	#[inline(always)]
 	fn available(&self) -> usize { self.len() }
-	#[inline(always)]
 	fn request(&mut self, count: usize) -> Result<bool> {
 		Ok(self.len() >= count)
 	}
@@ -92,6 +90,7 @@ impl DataSink for &mut [MaybeUninit<u8>] {
 
 use core::mem::take;
 
+#[allow(clippy::mut_mut)]
 fn mut_slice_write_bytes<T>(
 	sink: &mut &mut [T],
 	buf: &[u8],
@@ -110,6 +109,7 @@ fn mut_slice_write_bytes<T>(
 	}
 }
 
+#[allow(clippy::mut_mut)]
 fn mut_slice_push_u8<T>(
 	sink: &mut &mut [T],
 	value: u8,

@@ -65,7 +65,7 @@ impl BufferAccess for Vec<u8> {
 	}
 
 	fn clear_buf(&mut self) {
-		self.clear()
+		self.clear();
 	}
 
 	fn consume(&mut self, count: usize) {
@@ -183,7 +183,7 @@ impl BufferAccess for VecDeque<u8> {
 	}
 
 	fn clear_buf(&mut self) {
-		self.clear()
+		self.clear();
 	}
 
 	fn consume(&mut self, count: usize) {

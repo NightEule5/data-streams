@@ -50,90 +50,233 @@ pub trait DataSource {
 
 	/// Consumes up to `count` bytes in the stream, returning the number of bytes
 	/// consumed if successful. At least the available count may be consumed.
+	/// 
+	/// # Errors
+	/// 
+	/// Returns any IO errors encountered.
 	fn skip(&mut self, count: usize) -> Result<usize>;
 	/// Reads bytes into a slice, returning the bytes read. This method is greedy;
 	/// it consumes as many bytes as it can, until `buf` is filled or no more bytes
 	/// are read.
+	/// 
+	/// # Errors
+	/// 
+	/// Returns any IO errors encountered.
 	fn read_bytes<'a>(&mut self, buf: &'a mut [u8]) -> Result<&'a [u8]>;
 	/// Reads the exact length of bytes into a slice, returning the bytes read if
 	/// successful, or an end-of-stream error if not. Bytes are not consumed if an
 	/// end-of-stream error is returned.
+	/// 
+	/// # Errors
+	/// 
+	/// Returns [`Error::End`] with the slice length if the exact number of bytes
+	/// cannot be read. The bytes that were read remain in the buffer, but have
+	/// been consumed from the source.
 	fn read_exact_bytes<'a>(&mut self, buf: &'a mut [u8]) -> Result<&'a [u8]> {
 		default_read_exact_bytes(self, buf)
 	}
 	/// Reads an array with a size of `N` bytes.
+	/// 
+	/// # Errors
+	/// 
+	/// Returns [`Error::End`] with the array length if [`N`] bytes cannot be read.
 	fn read_array<const N: usize>(&mut self) -> Result<[u8; N]> where Self: Sized {
 		default_read_array(self)
 	}
 
 	/// Reads a [`u8`].
+	/// 
+	/// # Errors
+	/// 
+	/// Returns [`Error::End`] if the stream ends before exactly `1` byte can be
+	/// read.
 	fn read_u8(&mut self) -> Result<u8> { self.read_int_be_spec() }
 	/// Reads an [`i8`].
+	///
+	/// # Errors
+	///
+	/// Returns [`Error::End`] if the stream ends before exactly `1` byte can be
+	/// read.
 	fn read_i8(&mut self) -> Result<i8> { self.read_int_be_spec() }
 	/// Reads a big-endian [`u16`].
+	///
+	/// # Errors
+	///
+	/// Returns [`Error::End`] if the stream ends before exactly `2` bytes can be
+	/// read.
 	fn read_u16(&mut self) -> Result<u16> { self.read_int_be_spec() }
 	/// Reads a big-endian [`i16`].
+	///
+	/// # Errors
+	///
+	/// Returns [`Error::End`] if the stream ends before exactly `2` bytes can be
+	/// read.
 	fn read_i16(&mut self) -> Result<i16> { self.read_int_be_spec() }
 	/// Reads a little-endian [`u16`].
+	///
+	/// # Errors
+	///
+	/// Returns [`Error::End`] if the stream ends before exactly `2` bytes can be
+	/// read.
 	fn read_u16_le(&mut self) -> Result<u16> { self.read_int_le_spec() }
 	/// Reads a little-endian [`i16`].
+	///
+	/// # Errors
+	///
+	/// Returns [`Error::End`] if the stream ends before exactly `2` bytes can be
+	/// read.
 	fn read_i16_le(&mut self) -> Result<i16> { self.read_int_le_spec() }
 	/// Reads a big-endian [`u32`].
+	///
+	/// # Errors
+	///
+	/// Returns [`Error::End`] if the stream ends before exactly `4` bytes can be
+	/// read.
 	fn read_u32(&mut self) -> Result<u32> { self.read_int_be_spec() }
 	/// Reads a big-endian [`i32`].
+	///
+	/// # Errors
+	///
+	/// Returns [`Error::End`] if the stream ends before exactly `4` bytes can be
+	/// read.
 	fn read_i32(&mut self) -> Result<i32> { self.read_int_be_spec() }
 	/// Reads a little-endian [`u32`].
+	///
+	/// # Errors
+	///
+	/// Returns [`Error::End`] if the stream ends before exactly `4` bytes can be
+	/// read.
 	fn read_u32_le(&mut self) -> Result<u32> { self.read_int_le_spec() }
 	/// Reads a little-endian [`i32`].
+	///
+	/// # Errors
+	///
+	/// Returns [`Error::End`] if the stream ends before exactly `4` bytes can be
+	/// read.
 	fn read_i32_le(&mut self) -> Result<i32> { self.read_int_le_spec() }
 	/// Reads a big-endian [`u64`].
+	///
+	/// # Errors
+	///
+	/// Returns [`Error::End`] if the stream ends before exactly `8` bytes can be
+	/// read.
 	fn read_u64(&mut self) -> Result<u64> { self.read_int_be_spec() }
 	/// Reads a big-endian [`i64`].
+	///
+	/// # Errors
+	///
+	/// Returns [`Error::End`] if the stream ends before exactly `8` bytes can be
+	/// read.
 	fn read_i64(&mut self) -> Result<i64> { self.read_int_be_spec() }
 	/// Reads a little-endian [`u64`].
+	///
+	/// # Errors
+	///
+	/// Returns [`Error::End`] if the stream ends before exactly `8` bytes can be
+	/// read.
 	fn read_u64_le(&mut self) -> Result<u64> { self.read_int_le_spec() }
 	/// Reads a little-endian [`i64`].
+	///
+	/// # Errors
+	///
+	/// Returns [`Error::End`] if the stream ends before exactly `8` bytes can be
+	/// read.
 	fn read_i64_le(&mut self) -> Result<i64> { self.read_int_le_spec() }
 	/// Reads a big-endian [`u128`].
+	///
+	/// # Errors
+	///
+	/// Returns [`Error::End`] if the stream ends before exactly `16` bytes can be
+	/// read.
 	fn read_u128(&mut self) -> Result<u128> { self.read_int_be_spec() }
 	/// Reads a big-endian [`i128`].
+	///
+	/// # Errors
+	///
+	/// Returns [`Error::End`] if the stream ends before exactly `16` bytes can be
+	/// read.
 	fn read_i128(&mut self) -> Result<i128> { self.read_int_be_spec() }
 	/// Reads a little-endian [`u128`].
+	///
+	/// # Errors
+	///
+	/// Returns [`Error::End`] if the stream ends before exactly `16` bytes can be
+	/// read.
 	fn read_u128_le(&mut self) -> Result<u128> { self.read_int_le_spec() }
 	/// Reads a little-endian [`i128`].
+	///
+	/// # Errors
+	///
+	/// Returns [`Error::End`] if the stream ends before exactly `16` bytes can be
+	/// read.
 	fn read_i128_le(&mut self) -> Result<i128> { self.read_int_le_spec() }
 	/// Reads a big-endian [`usize`]. To make streams consistent across platforms,
 	/// [`usize`] is fixed to the size of [`u64`] regardless of the target platform.
+	///
+	/// # Errors
+	///
+	/// Returns [`Error::End`] if the stream ends before exactly `8` bytes can be
+	/// read.
 	fn read_usize(&mut self) -> Result<usize> {
 		self.read_u64().map(|i| i as usize)
 	}
 	/// Reads a big-endian [`isize`]. To make streams consistent across platforms,
 	/// [`isize`] is fixed to the size of [`i64`] regardless of the target platform.
+	///
+	/// # Errors
+	///
+	/// Returns [`Error::End`] if the stream ends before exactly `8` bytes can be
+	/// read.
 	fn read_isize(&mut self) -> Result<isize> {
 		self.read_i64().map(|i| i as isize)
 	}
 	/// Reads a little-endian [`usize`]. To make streams consistent across platforms,
 	/// [`usize`] is fixed to the size of [`u64`] regardless of the target platform.
+	///
+	/// # Errors
+	///
+	/// Returns [`Error::End`] if the stream ends before exactly `8` bytes can be
+	/// read.
 	fn read_usize_le(&mut self) -> Result<usize> {
 		self.read_u64_le().map(|i| i as usize)
 	}
 	/// Reads a little-endian [`isize`]. To make streams consistent across platforms,
 	/// [`isize`] is fixed to the size of [`i64`] regardless of the target platform.
+	///
+	/// # Errors
+	///
+	/// Returns [`Error::End`] if the stream ends before exactly `8` bytes can be
+	/// read.
 	fn read_isize_le(&mut self) -> Result<isize> {
 		self.read_i64_le().map(|i| i as isize)
 	}
 
 	/// Reads a big-endian integer.
+	///
+	/// # Errors
+	///
+	/// Returns [`Error::End`] if the stream ends before exactly the type's size in
+	/// bytes can be read.
 	fn read_int<T: PrimInt + Pod>(&mut self) -> Result<T> where Self: Sized {
 		self.read_int_be_spec()
 	}
 	/// Reads a little-endian integer.
+	///
+	/// # Errors
+	///
+	/// Returns [`Error::End`] if the stream ends before exactly the type's size in
+	/// bytes can be read.
 	fn read_int_le<T: PrimInt + Pod>(&mut self) -> Result<T> where Self: Sized {
 		self.read_int_le_spec()
 	}
 
 	/// Reads a value of generic type `T` supporting an arbitrary bit pattern. See
 	/// [`Pod`].
+	///
+	/// # Errors
+	///
+	/// Returns [`Error::End`] if the stream ends before exactly the type's size in
+	/// bytes can be read.
 	fn read_data<T: Pod>(&mut self) -> Result<T> where Self: Sized {
 		self.read_data_spec()
 	}
@@ -142,6 +285,13 @@ pub trait DataSource {
 	/// If invalid bytes are encountered, an error is returned and `buf` is unchanged.
 	/// In this case, the stream is left in a state with up to `count` bytes consumed
 	/// from it, including the invalid bytes and any subsequent bytes.
+	/// 
+	/// # Errors
+	/// 
+	/// Returns [`Error::Utf8`] if invalid UTF-8 is read. The stream is left in an
+	/// undefined state with up to `count` bytes consumed from it, including the
+	/// invalid bytes and any subsequent bytes. `buf` contains the read UTF-8 string
+	/// up to the invalid bytes.
 	#[cfg(feature = "alloc")]
 	fn read_utf8<'a>(&mut self, count: usize, buf: &'a mut String) -> Result<&'a str> {
 		default_read_utf8(self, count, buf)
@@ -151,6 +301,12 @@ pub trait DataSource {
 	/// string read. If invalid bytes are encountered, an error is returned and
 	/// `buf` is unchanged. In this case, the stream is left in a state with an
 	/// undefined number of bytes read.
+	///
+	/// # Errors
+	///
+	/// Returns [`Error::Utf8`] if invalid UTF-8 is read. The stream is left in a
+	/// state with all bytes consumed from it. `buf` contains the read UTF-8 string
+	/// up to the invalid bytes.
 	#[cfg(feature = "alloc")]
 	fn read_utf8_to_end<'a>(&mut self, buf: &'a mut String) -> Result<&'a str>;
 }
@@ -182,6 +338,10 @@ pub trait BufferAccess {
 	fn buf(&self) -> &[u8];
 	/// Fills the internal buffer from the underlying stream, returning its contents
 	/// if successful.
+	/// 
+	/// # Errors
+	/// 
+	/// Returns any IO errors encountered.
 	fn fill_buf(&mut self) -> Result<&[u8]>;
 	/// Clears the internal buffer.
 	fn clear_buf(&mut self);
@@ -206,7 +366,7 @@ impl<T: BufferAccess + ?Sized> DataSource for T {
 	}
 
 	default fn skip(&mut self, count: usize) -> Result<usize> {
-		default_skip(self, count)
+		Ok(default_skip(self, count))
 	}
 
 	default fn read_bytes<'a>(&mut self, buf: &'a mut [u8]) -> Result<&'a [u8]> {
@@ -268,15 +428,16 @@ pub(crate) fn default_request(source: &mut (impl BufferAccess + DataSource + ?Si
 	}
 }
 
+// Todo: after consuming, loop fill_buf and consume.
 #[allow(dead_code)]
-pub(crate) fn default_skip(source: &mut (impl BufferAccess + DataSource + ?Sized), mut count: usize) -> Result<usize> {
+pub(crate) fn default_skip(source: &mut (impl BufferAccess + DataSource + ?Sized), mut count: usize) -> usize {
 	let avail = source.available();
 	count = count.min(avail);
 	source.consume(count);
 	// Guard against faulty implementations by verifying that the buffered
 	// bytes were removed.
 	assert_eq!(source.available(), avail.saturating_sub(count));
-	Ok(avail)
+	avail
 }
 
 pub(crate) fn default_read_array<const N: usize>(source: &mut (impl DataSource + ?Sized)) -> Result<[u8; N]> {
@@ -384,10 +545,13 @@ mod read_exact_test {
 	use std::assert_matches::assert_matches;
 	use proptest::prelude::*;
 	use alloc::vec::from_elem;
+	#[cfg(feature = "nightly_specialization")]
 	use std::iter::repeat;
 	use proptest::collection::vec;
+	#[cfg(feature = "nightly_specialization")]
 	use crate::{BufferAccess, DataSource, Result};
-
+	
+	#[cfg(feature = "nightly_specialization")]
 	struct FakeBufSource {
 		source: Vec<u8>,
 		buffer: Vec<u8>

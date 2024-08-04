@@ -6,6 +6,7 @@ use bytemuck::{bytes_of, Pod};
 use crate::Result;
 
 /// A sink stream of data.
+#[allow(clippy::missing_errors_doc)]
 pub trait DataSink {
 	/// Writes all bytes from `buf`. Equivalent to [`Write::write_all`].
 	/// 

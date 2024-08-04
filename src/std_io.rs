@@ -22,7 +22,7 @@ impl<R: Read + ?Sized> DataSource for BufReader<R> {
 	}
 	
 	fn skip(&mut self, count: usize) -> Result<usize> {
-		buf_read_skip(self, count)
+		Ok(buf_read_skip(self, count))
 	}
 
 	fn read_bytes<'a>(&mut self, buf: &'a mut [u8]) -> Result<&'a [u8]> {
@@ -49,16 +49,15 @@ impl<R: Read + ?Sized> BufferAccess for BufReader<R> {
 	}
 
 	fn clear_buf(&mut self) {
-		BufferAccess::consume(self, self.available())
+		BufferAccess::consume(self, self.available());
 	}
 
 	fn consume(&mut self, count: usize) {
-		BufRead::consume(self, count)
+		BufRead::consume(self, count);
 	}
 }
 
 impl<W: Write + ?Sized> DataSink for BufWriter<W> {
-	#[inline(always)]
 	fn write_bytes(&mut self, buf: &[u8]) -> Result {
 		self.write_all(buf)?;
 		Ok(())
@@ -109,11 +108,11 @@ impl<T: AsRef<[u8]>> BufferAccess for Cursor<T> {
 	}
 
 	fn clear_buf(&mut self) {
-		BufferAccess::consume(self, self.buf_capacity().min(self.position() as usize))
+		BufferAccess::consume(self, self.buf_capacity().min(self.position() as usize));
 	}
 
 	fn consume(&mut self, count: usize) {
-		BufRead::consume(self, count)
+		BufRead::consume(self, count);
 	}
 }
 
@@ -143,7 +142,7 @@ impl<T: BufferAccess + BufRead> DataSource for Take<T> {
 	}
 
 	fn skip(&mut self, count: usize) -> Result<usize> {
-		buf_read_skip(self, count)
+		Ok(buf_read_skip(self, count))
 	}
 
 	fn read_bytes<'a>(&mut self, buf: &'a mut [u8]) -> Result<&'a [u8]> {
@@ -162,7 +161,7 @@ impl<T: BufferAccess + BufRead> DataSource for Take<T> {
 
 impl<T: BufferAccess + BufRead> BufferAccess for Take<T> {
 	fn buf_capacity(&self) -> usize { self.get_ref().buf_capacity() }
-
+	
 	fn buf(&self) -> &[u8] {
 		let buf = self.get_ref().buf();
 		let len = (self.limit() as usize).min(buf.len());
@@ -174,11 +173,11 @@ impl<T: BufferAccess + BufRead> BufferAccess for Take<T> {
 	}
 
 	fn clear_buf(&mut self) {
-		BufferAccess::consume(self, self.available())
+		BufferAccess::consume(self, self.available());
 	}
 
 	fn consume(&mut self, count: usize) {
-		BufRead::consume(self, count)
+		BufRead::consume(self, count);
 	}
 }
 
@@ -284,17 +283,17 @@ fn get_repeated_byte(repeat: &mut Repeat) -> u8 {
 	b
 }
 
-fn buf_read_skip(source: &mut (impl BufferAccess + DataSource + ?Sized), count: usize) -> Result<usize> {
+fn buf_read_skip(source: &mut (impl BufferAccess + DataSource + ?Sized), count: usize) -> usize {
 	let mut skip_count = 0;
 	while skip_count < count {
-		let cur_skip_count = default_skip(&mut *source, count)?;
+		let cur_skip_count = default_skip(&mut *source, count);
 		skip_count += cur_skip_count;
 
 		if cur_skip_count == 0 {
 			break
 		}
 	}
-	Ok(skip_count)
+	skip_count
 }
 
 fn buf_read_bytes<'a>(source: &mut (impl BufferAccess + DataSource + Read + ?Sized), buf: &'a mut [u8]) -> Result<&'a [u8]> {
