@@ -4,28 +4,28 @@
 use alloc::string::String;
 #[cfg(feature = "alloc")]
 use simdutf8::compat::from_utf8;
-use crate::{DataSink, Error, Result};
-use crate::source::{BufferAccess, DataSource};
+use crate::{
+	Error,
+	DataSink,
+	Result,
+	BufferAccess,
+	DataSource,
+};
 
 impl DataSource for &[u8] {
-	#[inline(always)]
 	fn available(&self) -> usize { self.len() }
-	#[inline(always)]
 	fn request(&mut self, count: usize) -> Result<bool> {
 		Ok(self.len() >= count)
 	}
 
 	fn skip(&mut self, mut count: usize) -> Result<usize> {
 		count = count.min(self.len());
-		self.consume(count);
+		self.drain_buffer(count);
 		Ok(count)
 	}
 	
 	fn read_bytes<'a>(&mut self, buf: &'a mut [u8]) -> Result<&'a [u8]> {
-		let len = self.len().min(buf.len());
-		buf[..len].copy_from_slice(&self[..len]);
-		*self = &self[len..];
-		Ok(&buf[..len])
+		Ok(read_bytes_infallible(self, buf))
 	}
 
 	#[cfg(feature = "alloc")]
@@ -45,17 +45,16 @@ impl DataSource for &[u8] {
 }
 
 impl BufferAccess for &[u8] {
-	fn buf_capacity(&self) -> usize { self.len() }
+	fn buffer_capacity(&self) -> usize { self.len() }
+	fn buffer_count(&self) -> usize { self.len() }
+	fn buffer(&self) -> &[u8] { self }
+	fn fill_buffer(&mut self) -> Result<&[u8]> { Ok(self) }
 
-	fn buf(&self) -> &[u8] { self }
-
-	fn fill_buf(&mut self) -> Result<&[u8]> { Ok(self) }
-
-	fn clear_buf(&mut self) {
+	fn clear_buffer(&mut self) {
 		*self = &[];
 	}
 
-	fn consume(&mut self, count: usize) {
+	fn drain_buffer(&mut self, count: usize) {
 		*self = &self[count..];
 	}
 }
@@ -75,10 +74,10 @@ impl DataSink for &mut [u8] {
 	}
 }
 
-#[cfg(feature = "nightly_uninit_slice")]
+#[cfg(feature = "unstable_uninit_slice")]
 use core::mem::MaybeUninit;
 
-#[cfg(feature = "nightly_uninit_slice")]
+#[cfg(feature = "unstable_uninit_slice")]
 impl DataSink for &mut [MaybeUninit<u8>] {
 	fn write_bytes(&mut self, buf: &[u8]) -> Result {
 		mut_slice_write_bytes(self, buf, |t, s| { MaybeUninit::copy_from_slice(t, s); })
@@ -95,6 +94,7 @@ impl DataSink for &mut [MaybeUninit<u8>] {
 
 use core::mem::take;
 
+#[allow(clippy::mut_mut)]
 fn mut_slice_write_bytes<T>(
 	sink: &mut &mut [T],
 	buf: &[u8],
@@ -107,19 +107,20 @@ fn mut_slice_write_bytes<T>(
 	copy_from_slice(target, &buf[..len]);
 	let remaining = buf.len() - len;
 	if remaining > 0 {
-		Err(Error::Overflow { remaining })
+		Err(Error::overflow(remaining))
 	} else {
 		Ok(())
 	}
 }
 
+#[allow(clippy::mut_mut)]
 fn mut_slice_push_u8<T>(
 	sink: &mut &mut [T],
 	value: u8,
 	map: impl FnOnce(u8) -> T
 ) -> Result {
 	if sink.is_empty() {
-		Err(Error::Overflow { remaining: 1 })
+		Err(Error::overflow(1))
 	} else {
 		sink[0] = map(value);
 		*sink = &mut take(sink)[1..];
@@ -129,8 +130,8 @@ fn mut_slice_push_u8<T>(
 
 pub(crate) fn read_bytes_infallible<'a>(source: &mut &[u8], sink: &'a mut [u8]) -> &'a [u8] {
 	let len = source.len().min(sink.len());
-	let (filled, unfilled) = sink.split_at_mut(len);
+	let (filled, _) = sink.split_at_mut(len);
 	filled.copy_from_slice(&source[..len]);
 	*source = &source[len..];
-	unfilled
+	filled
 }
