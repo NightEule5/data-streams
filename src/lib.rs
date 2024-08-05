@@ -61,6 +61,21 @@
 //!     }
 //! }
 //! ```
+//! 
+//! # Feature flags
+//! 
+//! - `std`: Provides impls for [`std::io`] types, such as [`BufReader`](std::io::BufReader) and
+//!   [`BufWriter`](std::io::BufWriter). Requires a dependency on the Rust standard library. Disable
+//!   to allow usage with `no_std`.
+//! - `alloc`: Provides impls for dynamically allocated types such as [`Vec`], and source methods
+//!   for reading into these. Requires a heap allocator, which may not be present on platforms
+//!   without the standard library.
+//! - `unstable`: Provides unstable features only present on the nightly compiler. Enables:
+//!   - `unstable_borrowed_buf`: Provides [`DataSource`] impls for [`BorrowedBuf`](core::io::BorrowedBuf)
+//!     and [`BorrowedCursor`](core::io::BorrowedCursor).
+//!   - `unstable_specialization`: Enables trait specialization, providing a default [`DataSource`]
+//!     for impls of [`BufferAccess`].
+//!   - `unstable_uninit_slice`: Provides a [`DataSink`] impl for `&mut [MaybeUninit<u8>]`.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 #![cfg_attr(feature = "unstable_specialization", feature(specialization))]
