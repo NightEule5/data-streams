@@ -8,41 +8,50 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  RUSTFLAGS: -Dwarnings
 
 jobs:
   build:
-    name: Build
+    name: Build ${{matrix.rust}}
     runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-    - run: rustup update nightly
-    - name: Build
-      run: cargo build --verbose
-    - name: Build with no_std
-      run: cargo build --verbose --no-default-features
-    - name: Build with nightly features
-      run: cargo +nightly build --verbose --features nightly
-  lint:
-    name: Lint
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        rust: [stable, nightly]
     steps:
       - uses: actions/checkout@v4
-      - run: rustup update nightly && rustup component add --toolchain nightly-x86_64-unknown-linux-gnu clippy
-      - name: Lint
-        run: cargo clippy --verbose
-      - name: Lint with no_std
-        run: cargo clippy --verbose --no-default-features
-      - name: Lint with nightly features
-        run: cargo +nightly clippy --verbose --features nightly
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{matrix.rust}}
+      - name: Build no_std${{matrix.rust == 'nightly' && ' + unstable' || ''}}
+        run: cargo build --verbose --no-default-features ${{matrix.rust == 'nightly' && '--features unstable' || ''}}
+      - name: Build alloc${{matrix.rust == 'nightly' && ' + unstable' || ''}}
+        run: cargo build --verbose --no-default-features --features alloc${{matrix.rust == 'nightly' && ',unstable' || ''}}
+      - name: Build std + alloc${{matrix.rust == 'nightly' && ' + unstable' || ''}}
+        run: cargo build --verbose --no-default-features --features std,alloc${{matrix.rust == 'nightly' && ',unstable' || ''}}
+  clippy:
+    name: Clippy ${{matrix.rust}}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        rust: [stable, nightly]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{matrix.rust}}
+          components: clippy
+      - name: Clippy no_std${{matrix.rust == 'nightly' && ' + unstable' || ''}}
+        run: cargo clippy --verbose --no-default-features ${{matrix.rust == 'nightly' && '--features unstable' || ''}}
+      - name: Clippy alloc${{matrix.rust == 'nightly' && ' + unstable' || ''}}
+        run: cargo clippy --verbose --no-default-features --features alloc${{matrix.rust == 'nightly' && ',unstable' || ''}}
+      - name: Clippy std + alloc${{matrix.rust == 'nightly' && ' + unstable' || ''}}
+        run: cargo clippy --verbose --no-default-features --features std,alloc${{matrix.rust == 'nightly' && ',unstable' || ''}}
   test:
     name: Test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: rustup update nightly && rustup default nightly
-      - name: Run tests
-        run: cargo test --verbose
-      - name: Run tests on no_std
-        run: cargo test --verbose --no-default-features
-      - name: Run tests with nightly features
-        run: cargo test --verbose --features nightly
+      - uses: dtolnay/rust-toolchain@nightly
+      - run: cargo test --verbose --all-features
