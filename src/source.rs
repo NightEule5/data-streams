@@ -348,7 +348,7 @@ pub trait BufferAccess {
 	fn drain_buffer(&mut self, count: usize);
 }
 
-#[cfg(feature = "nightly_specialization")]
+#[cfg(feature = "unstable_specialization")]
 impl<T: BufferAccess + ?Sized> DataSource for T {
 	default fn available(&self) -> usize {
 		self.buffer_count()
@@ -484,7 +484,7 @@ fn default_read_exact_bytes<'a>(source: &mut (impl DataSource + ?Sized), buf: &'
 	}
 }
 
-#[cfg(any(feature = "nightly_specialization", test))]
+#[cfg(any(feature = "unstable_specialization", test))]
 fn buf_read_exact_bytes<'a>(source: &mut (impl BufferAccess + DataSource + ?Sized), buf: &'a mut [u8]) -> Result<&'a [u8]> {
 	let len = buf.len();
 	match source.require(len) {
@@ -566,19 +566,19 @@ mod read_exact_test {
 	use std::assert_matches::assert_matches;
 	use proptest::prelude::*;
 	use alloc::vec::from_elem;
-	#[cfg(feature = "nightly_specialization")]
+	#[cfg(feature = "unstable_specialization")]
 	use std::iter::repeat;
 	use proptest::collection::vec;
-	#[cfg(feature = "nightly_specialization")]
+	#[cfg(feature = "unstable_specialization")]
 	use crate::{BufferAccess, DataSource, Result};
 	
-	#[cfg(feature = "nightly_specialization")]
+	#[cfg(feature = "unstable_specialization")]
 	struct FakeBufSource {
 		source: Vec<u8>,
 		buffer: Vec<u8>
 	}
 
-	#[cfg(feature = "nightly_specialization")]
+	#[cfg(feature = "unstable_specialization")]
 	impl BufferAccess for FakeBufSource {
 		fn buffer_capacity(&self) -> usize {
 			self.buffer.capacity()
@@ -630,7 +630,7 @@ mod read_exact_test {
 		}
 	}
 
-	#[cfg(feature = "nightly_specialization")]
+	#[cfg(feature = "unstable_specialization")]
 	proptest! {
 		#[test]
 		fn read_exact_insufficient_buffer(source in vec(any::<u8>(), 2..=256)) {
@@ -642,7 +642,7 @@ mod read_exact_test {
 		}
 	}
 
-	#[cfg(feature = "nightly_specialization")]
+	#[cfg(feature = "unstable_specialization")]
 	proptest! {
 		#[test]
 		fn read_exact_buffered(source in vec(any::<u8>(), 1..=256)) {

@@ -1,7 +1,7 @@
 // Copyright 2024 - Strixpyrr
 // SPDX-License-Identifier: Apache-2.0
 
-#![cfg(feature = "nightly_borrowed_buf")]
+#![cfg(feature = "unstable_borrowed_buf")]
 
 use core::io::{BorrowedBuf, BorrowedCursor};
 use crate::{DataSink, Error, Result};

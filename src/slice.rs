@@ -74,10 +74,10 @@ impl DataSink for &mut [u8] {
 	}
 }
 
-#[cfg(feature = "nightly_uninit_slice")]
+#[cfg(feature = "unstable_uninit_slice")]
 use core::mem::MaybeUninit;
 
-#[cfg(feature = "nightly_uninit_slice")]
+#[cfg(feature = "unstable_uninit_slice")]
 impl DataSink for &mut [MaybeUninit<u8>] {
 	fn write_bytes(&mut self, buf: &[u8]) -> Result {
 		mut_slice_write_bytes(self, buf, |t, s| { MaybeUninit::copy_from_slice(t, s); })

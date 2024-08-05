@@ -63,9 +63,9 @@
 //! ```
 
 #![cfg_attr(not(feature = "std"), no_std)]
-#![cfg_attr(feature = "nightly_specialization", feature(specialization))]
-#![cfg_attr(feature = "nightly_borrowed_buf", feature(core_io_borrowed_buf))]
-#![cfg_attr(feature = "nightly_uninit_slice", feature(maybe_uninit_write_slice))]
+#![cfg_attr(feature = "unstable_specialization", feature(specialization))]
+#![cfg_attr(feature = "unstable_borrowed_buf", feature(core_io_borrowed_buf))]
+#![cfg_attr(feature = "unstable_uninit_slice", feature(maybe_uninit_write_slice))]
 #![cfg_attr(test, feature(assert_matches))]
 #![allow(incomplete_features)]
 

@@ -1,12 +1,12 @@
 // Copyright 2024 - Strixpyrr
 // SPDX-License-Identifier: Apache-2.0
 
-#[cfg(all(feature = "alloc", not(feature = "nightly_specialization")))]
+#[cfg(all(feature = "alloc", not(feature = "unstable_specialization")))]
 use alloc::string::String;
 #[cfg(feature = "alloc")]
 use alloc::boxed::Box;
 use crate::{BufferAccess, DataSink, Result};
-#[cfg(not(feature = "nightly_specialization"))]
+#[cfg(not(feature = "unstable_specialization"))]
 use crate::{DataSource, source::default_read_array};
 
 // Todo: DataSource couldn't be implemented for &mut <source> when specialization
@@ -115,9 +115,9 @@ impl_source! {
 	// this trait for mutable references of their type; &mut S is a "foreign type" in
 	// compiler terms. I don't know a way around this issue, so we'll disable it when
 	// specialization is enabled. Fixing this down the line shouldn't be a breaking change.
-	#[cfg(not(feature = "nightly_specialization"))]
+	#[cfg(not(feature = "unstable_specialization"))]
 	impl<S> for &mut S;
-	#[cfg(all(feature = "alloc", not(feature = "nightly_specialization")))]
+	#[cfg(all(feature = "alloc", not(feature = "unstable_specialization")))]
 	impl<S> for Box<S>;
 }
 

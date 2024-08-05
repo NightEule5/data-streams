@@ -29,10 +29,10 @@ use crate::{
 };
 
 impl<R: Read + ?Sized> DataSource for BufReader<R> {
-	#[cfg(not(feature = "nightly_specialization"))]
+	#[cfg(not(feature = "unstable_specialization"))]
 	fn available(&self) -> usize { self.buffer_count() }
 
-	#[cfg(not(feature = "nightly_specialization"))]
+	#[cfg(not(feature = "unstable_specialization"))]
 	fn request(&mut self, count: usize) -> Result<bool> {
 		crate::source::default_request(self, count)
 	}
@@ -77,7 +77,7 @@ impl<W: Write + ?Sized> DataSink for BufWriter<W> {
 }
 
 impl<T: AsRef<[u8]>> DataSource for Cursor<T> {
-	#[cfg(not(feature = "nightly_specialization"))]
+	#[cfg(not(feature = "unstable_specialization"))]
 	fn available(&self) -> usize { self.buffer_count() }
 
 	fn request(&mut self, count: usize) -> Result<bool> {
@@ -146,10 +146,10 @@ fn cursor_as_slice<T: AsRef<[u8]>>(cursor: &Cursor<T>) -> &[u8] {
 }
 
 impl<T: BufferAccess + BufRead> DataSource for Take<T> {
-	#[cfg(not(feature = "nightly_specialization"))]
+	#[cfg(not(feature = "unstable_specialization"))]
 	fn available(&self) -> usize { self.buffer_count() }
 
-	#[cfg(not(feature = "nightly_specialization"))]
+	#[cfg(not(feature = "unstable_specialization"))]
 	fn request(&mut self, count: usize) -> Result<bool> {
 		crate::source::default_request(self, count)
 	}
