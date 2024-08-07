@@ -42,10 +42,6 @@
 //!         self.buffer.drain(..count);
 //!         Ok(&buf[..count])
 //!     }
-//!
-//!     fn read_utf8_to_end<'a>(&mut self, buf: &'a mut String) -> Result<&'a str> {
-//!         self.read_utf8(self.available(), buf)
-//!     }
 //! }
 //!
 //! struct MySink {
