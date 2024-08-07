@@ -42,10 +42,6 @@
 //!         self.buffer.drain(..count);
 //!         Ok(&buf[..count])
 //!     }
-//!
-//!     fn read_utf8_to_end<'a>(&mut self, buf: &'a mut String) -> Result<&'a str> {
-//!         self.read_utf8(self.available(), buf)
-//!     }
 //! }
 //!
 //! struct MySink {
@@ -105,6 +101,8 @@ mod std_io;
 mod wrappers;
 
 pub use error::Error;
+#[cfg(feature = "utf8")]
+pub use error::{Utf8Error, Utf8ErrorKind, SimdUtf8Error};
 pub use sink::{DataSink, GenericDataSink};
 pub use source::{BufferAccess, DataSource, GenericDataSource};
 
