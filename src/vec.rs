@@ -182,6 +182,7 @@ impl DataSink for alloc::string::String {
 }
 
 /// A reimplementation of the unstable [`core::str::utf8_char_width`] function.
+#[cfg(feature = "utf8")]
 fn utf8_char_width(byte: u8) -> usize {
 	const UTF8_CHAR_WIDTH: &[u8; 256] = &[
 		// 1  2  3  4  5  6  7  8  9  A  B  C  D  E  F

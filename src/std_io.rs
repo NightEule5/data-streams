@@ -297,6 +297,7 @@ fn buf_read_exact_bytes<'a>(source: &mut (impl Read + ?Sized), buf: &'a mut [u8]
 }
 
 #[cfg(all(feature = "alloc", feature = "utf8"))]
+#[allow(dead_code)]
 fn buf_read_utf8_to_end<'a>(source: &mut (impl Read + ?Sized), buf: &'a mut String) -> Result<&'a str> {
 	unsafe {
 		crate::source::append_utf8(buf, |b|

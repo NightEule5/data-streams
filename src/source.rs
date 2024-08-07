@@ -550,6 +550,7 @@ fn buf_read_exact_bytes<'a>(source: &mut (impl BufferAccess + DataSource + ?Size
 }
 
 #[cfg(all(feature = "alloc", feature = "utf8"))]
+#[allow(dead_code)]
 pub(crate) fn default_read_utf8<'a>(
 	source: &mut (impl DataSource + ?Sized),
 	count: usize,
@@ -567,6 +568,7 @@ pub(crate) fn default_read_utf8<'a>(
 }
 
 #[cfg(all(feature = "alloc", feature = "utf8"))]
+#[allow(dead_code)]
 pub(crate) unsafe fn append_utf8<R>(buf: &mut String, read: R) -> Result<&str>
 where
 	R: FnOnce(&mut Vec<u8>) -> Result<usize> {

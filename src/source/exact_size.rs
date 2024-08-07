@@ -1,7 +1,7 @@
 // Copyright 2024 - Strixpyrr
 // SPDX-License-Identifier: Apache-2.0
 
-use std::ops::Deref;
+use core::ops::Deref;
 #[cfg(feature = "utf8")]
 use simdutf8::compat::from_utf8;
 use crate::{BufferAccess, DataSource, Result};
