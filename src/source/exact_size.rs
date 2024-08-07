@@ -19,47 +19,55 @@ trait ExactSizeBuffer: Deref<Target = [u8]> {
 	}
 }
 
-// How does adding the `+ BufferAccess` bound solve the conflicting implementation?
-impl<T: ExactSizeBuffer + BufferAccess> DataSource for T {
-	fn available(&self) -> usize { self.len() }
-	fn request(&mut self, count: usize) -> Result<bool> {
-		Ok(self.len() >= count)
-	}
-
-	fn skip(&mut self, mut count: usize) -> Result<usize> {
-		count = count.min(self.len());
-		self.consume(count);
-		Ok(count)
-	}
-
-	fn read_bytes<'a>(&mut self, buf: &'a mut [u8]) -> Result<&'a [u8]> {
-		Ok(self.read_bytes_infallible(buf))
-	}
-
-	/// Reads bytes into a slice, returning them as a UTF-8 string if valid.
-	///
-	/// # Errors
-	///
-	/// Returns [`Error::Utf8`] if invalid UTF-8 is read. This implementation only
-	/// consumes valid UTF-8. `buf` is left with a valid UTF-8 string whose length
-	/// is given by the error, [`Utf8Error::valid_up_to`]. This slice can be safely
-	/// converted to a string with [`from_str_unchecked`] or [`Utf8Error::split_valid`].
-	///
-	/// [`Utf8Error::valid_up_to`]: simdutf8::compat::Utf8Error::valid_up_to
-	/// [`from_str_unchecked`]: core::str::from_utf8_unchecked
-	#[cfg(feature = "utf8")]
-	fn read_utf8<'a>(&mut self, buf: &'a mut [u8]) -> Result<&'a str> {
-		let count = buf.len().min(self.len());
-		let filled = &mut buf[..count];
-		filled.copy_from_slice(&self[..count]);
-		let (result, consumed) = match from_utf8(filled) {
-			Ok(str) => (Ok(str), count),
-			Err(error) => (Err(error.into()), error.valid_up_to())
-		};
-		self.consume(consumed);
-		result
-	}
+// Conflicting implementation with blanket impl, use a macro instead.
+macro_rules! impl_source {
+    ($($(#[$meta:meta])?$ty:ty);+) => {
+		$(
+		$(#[$meta])?
+		impl DataSource for $ty {
+			fn available(&self) -> usize { self.len() }
+			fn request(&mut self, count: usize) -> Result<bool> {
+				Ok(self.len() >= count)
+			}
+		
+			fn skip(&mut self, mut count: usize) -> Result<usize> {
+				count = count.min(self.len());
+				self.consume(count);
+				Ok(count)
+			}
+		
+			fn read_bytes<'a>(&mut self, buf: &'a mut [u8]) -> Result<&'a [u8]> {
+				Ok(self.read_bytes_infallible(buf))
+			}
+		
+			/// Reads bytes into a slice, returning them as a UTF-8 string if valid.
+			///
+			/// # Errors
+			///
+			/// Returns [`Error::Utf8`] if invalid UTF-8 is read. This implementation only
+			/// consumes valid UTF-8. `buf` is left with a valid UTF-8 string whose length
+			/// is given by the error, [`Utf8Error::valid_up_to`]. This slice can be safely
+			/// converted to a string with [`from_str_unchecked`] or [`Utf8Error::split_valid`].
+			///
+			/// [`Utf8Error::valid_up_to`]: simdutf8::compat::Utf8Error::valid_up_to
+			/// [`from_str_unchecked`]: core::str::from_utf8_unchecked
+			#[cfg(feature = "utf8")]
+			fn read_utf8<'a>(&mut self, buf: &'a mut [u8]) -> Result<&'a str> {
+				let count = buf.len().min(self.len());
+				let filled = &mut buf[..count];
+				filled.copy_from_slice(&self[..count]);
+				let (result, consumed) = match from_utf8(filled) {
+					Ok(str) => (Ok(str), count),
+					Err(error) => (Err(error.into()), error.valid_up_to())
+				};
+				self.consume(consumed);
+				result
+			}
+		})+
+	};
 }
+
+impl_source! { &[u8]; #[cfg(feature = "alloc")] alloc::vec::Vec<u8> }
 
 impl ExactSizeBuffer for &[u8] {
 	fn consume(&mut self, count: usize) {
