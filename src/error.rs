@@ -7,7 +7,7 @@ use alloc::collections::TryReserveError;
 pub use simdutf8::compat::Utf8Error as SimdUtf8Error;
 use core::fmt::{Display, Formatter, Result as FmtResult};
 #[cfg(feature = "utf8")]
-use std::num::NonZeroU8;
+use core::num::NonZeroU8;
 
 /// A stream error.
 #[derive(Debug)]
@@ -230,9 +230,11 @@ impl Utf8Error {
 
 #[cfg(feature = "utf8")]
 impl Utf8Error {
+	#[cfg(any(feature = "unstable_specialization", feature = "alloc"))]
 	pub(crate) fn set_offset(&mut self, offset: usize) {
 		self.offset += offset;
 	}
+	#[cfg(feature = "unstable_specialization")]
 	pub(crate) fn with_offset(mut self, offset: usize) -> Self {
 		self.set_offset(offset);
 		self

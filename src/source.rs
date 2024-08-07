@@ -554,7 +554,7 @@ fn buf_read_exact_bytes<'a>(source: &mut (impl BufferAccess + DataSource + ?Size
 pub(crate) fn default_read_utf8<'a>(
 	source: &mut (impl DataSource + ?Sized),
 	count: usize,
-	buf: &'a mut String
+	buf: &'a mut alloc::string::String
 ) -> Result<&'a str> {
 	buf.reserve(count);
 	unsafe {
@@ -569,9 +569,9 @@ pub(crate) fn default_read_utf8<'a>(
 
 #[cfg(all(feature = "alloc", feature = "utf8"))]
 #[allow(dead_code)]
-pub(crate) unsafe fn append_utf8<R>(buf: &mut String, read: R) -> Result<&str>
+pub(crate) unsafe fn append_utf8<R>(buf: &mut alloc::string::String, read: R) -> Result<&str>
 where
-	R: FnOnce(&mut Vec<u8>) -> Result<usize> {
+	R: FnOnce(&mut alloc::vec::Vec<u8>) -> Result<usize> {
 	use simdutf8::compat::from_utf8;
 
 	// A drop guard which ensures the string is truncated to valid UTF-8 when out
@@ -579,7 +579,7 @@ where
 	// string to grow after the new bytes are checked to be valid UTF-8.
 	struct Guard<'a> {
 		len: usize,
-		buf: &'a mut Vec<u8>
+		buf: &'a mut alloc::vec::Vec<u8>
 	}
 
 	impl Drop for Guard<'_> {
