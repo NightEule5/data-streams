@@ -103,7 +103,7 @@ mod wrappers;
 pub use error::Error;
 #[cfg(feature = "utf8")]
 pub use error::{Utf8Error, Utf8ErrorKind, SimdUtf8Error};
-pub use sink::{DataSink, GenericDataSink};
+pub use sink::{DataSink, GenericDataSink, VecSink};
 pub use source::{BufferAccess, DataSource, GenericDataSource};
 
 pub type Result<T = (), E = Error> = core::result::Result<T, E>;
