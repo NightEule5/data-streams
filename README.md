@@ -27,9 +27,16 @@ fn write(source: &mut impl DataSink) -> Result<()> {
 }
 ```
 
-## `no_std` Support
+## Feature flags
+
+The `utf8` feature enables reading UTF-8 bytes, with high-performance validation from the [`simdutf8`]
+crate.
+
+[`simdutf8`]: https://github.com/rusticstuff/simdutf8
+
+### `no_std` Support
 
 This crate supports `no_std` and environments without `alloc`. These are toggled by the `std` and
 `alloc` features respectively. `no_std` allows use in embedded environments, at the expense of lost
 implementations for types that would be provided by `std::io`. Disabling `alloc` removes reading
-UTF-8 into owned strings.
+into vectors/strings.
