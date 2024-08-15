@@ -1,8 +1,6 @@
 // Copyright 2024 - Strixpyrr
 // SPDX-License-Identifier: Apache-2.0
 
-#[cfg(all(feature = "alloc", not(feature = "unstable_specialization")))]
-use alloc::string::String;
 #[cfg(feature = "alloc")]
 use alloc::boxed::Box;
 use crate::{BufferAccess, DataSink, Result};
@@ -97,14 +95,9 @@ macro_rules! impl_source {
 				default_read_array(&mut **self)
 			}
 
-			#[cfg(feature = "alloc")]
-			fn read_utf8<'a>(&mut self, count: usize, buf: &'a mut String) -> Result<&'a str> {
-				(**self).read_utf8(count, buf)
-			}
-
-			#[cfg(feature = "alloc")]
-			fn read_utf8_to_end<'a>(&mut self, buf: &'a mut String) -> Result<&'a str> {
-				(**self).read_utf8_to_end(buf)
+			#[cfg(feature = "utf8")]
+			fn read_utf8<'a>(&mut self, buf: &'a mut [u8]) -> Result<&'a str> {
+				(**self).read_utf8(buf)
 			}
 		})+
 	};

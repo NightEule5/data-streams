@@ -27,8 +27,16 @@ jobs:
         run: cargo build --verbose --no-default-features ${{matrix.rust == 'nightly' && '--features unstable' || ''}}
       - name: Build alloc${{matrix.rust == 'nightly' && ' + unstable' || ''}}
         run: cargo build --verbose --no-default-features --features alloc${{matrix.rust == 'nightly' && ',unstable' || ''}}
+      - name: Build utf8${{matrix.rust == 'nightly' && ' + unstable' || ''}}
+        run: cargo build --verbose --no-default-features --features utf8${{matrix.rust == 'nightly' && ',unstable' || ''}}
+      - name: Build alloc + utf8${{matrix.rust == 'nightly' && ' + unstable' || ''}}
+        run: cargo build --verbose --no-default-features --features alloc,utf8${{matrix.rust == 'nightly' && ',unstable' || ''}}
       - name: Build std + alloc${{matrix.rust == 'nightly' && ' + unstable' || ''}}
         run: cargo build --verbose --no-default-features --features std,alloc${{matrix.rust == 'nightly' && ',unstable' || ''}}
+      - name: Build std + utf8${{matrix.rust == 'nightly' && ' + unstable' || ''}}
+        run: cargo build --verbose --no-default-features --features std,utf8${{matrix.rust == 'nightly' && ',unstable' || ''}}
+      - name: Build std + alloc + utf8${{matrix.rust == 'nightly' && ' + unstable' || ''}}
+        run: cargo build --verbose --no-default-features --features std,alloc,utf8${{matrix.rust == 'nightly' && ',unstable' || ''}}
   clippy:
     name: Clippy ${{matrix.rust}}
     runs-on: ubuntu-latest
@@ -46,8 +54,16 @@ jobs:
         run: cargo clippy --verbose --no-default-features ${{matrix.rust == 'nightly' && '--features unstable' || ''}}
       - name: Clippy alloc${{matrix.rust == 'nightly' && ' + unstable' || ''}}
         run: cargo clippy --verbose --no-default-features --features alloc${{matrix.rust == 'nightly' && ',unstable' || ''}}
+      - name: Clippy utf8${{matrix.rust == 'nightly' && ' + unstable' || ''}}
+        run: cargo clippy --verbose --no-default-features --features utf8${{matrix.rust == 'nightly' && ',unstable' || ''}}
+      - name: Clippy alloc + utf8${{matrix.rust == 'nightly' && ' + unstable' || ''}}
+        run: cargo clippy --verbose --no-default-features --features alloc,utf8${{matrix.rust == 'nightly' && ',unstable' || ''}}
       - name: Clippy std + alloc${{matrix.rust == 'nightly' && ' + unstable' || ''}}
         run: cargo clippy --verbose --no-default-features --features std,alloc${{matrix.rust == 'nightly' && ',unstable' || ''}}
+      - name: Clippy std + utf8${{matrix.rust == 'nightly' && ' + unstable' || ''}}
+        run: cargo clippy --verbose --no-default-features --features std,utf8${{matrix.rust == 'nightly' && ',unstable' || ''}}
+      - name: Clippy std + alloc + utf8${{matrix.rust == 'nightly' && ' + unstable' || ''}}
+        run: cargo clippy --verbose --no-default-features --features std,alloc,utf8${{matrix.rust == 'nightly' && ',unstable' || ''}}
   test:
     name: Test
     runs-on: ubuntu-latest

@@ -1,63 +1,7 @@
+// Copyright 2024 - Strixpyrr
 // SPDX-License-Identifier: Apache-2.0
 
-#[cfg(feature = "alloc")]
-use alloc::string::String;
-#[cfg(feature = "alloc")]
-use simdutf8::compat::from_utf8;
-use crate::{
-	Error,
-	DataSink,
-	Result,
-	BufferAccess,
-	DataSource,
-};
-
-impl DataSource for &[u8] {
-	fn available(&self) -> usize { self.len() }
-	fn request(&mut self, count: usize) -> Result<bool> {
-		Ok(self.len() >= count)
-	}
-
-	fn skip(&mut self, mut count: usize) -> Result<usize> {
-		count = count.min(self.len());
-		self.drain_buffer(count);
-		Ok(count)
-	}
-	
-	fn read_bytes<'a>(&mut self, buf: &'a mut [u8]) -> Result<&'a [u8]> {
-		Ok(read_bytes_infallible(self, buf))
-	}
-
-	#[cfg(feature = "alloc")]
-	fn read_utf8<'a>(&mut self, mut count: usize, buf: &'a mut String) -> Result<&'a str> {
-		count = count.min(self.len());
-		let result = from_utf8(&self[..count]);
-		*self = &self[count..];
-		let start = buf.len();
-		buf.push_str(result?);
-		Ok(&buf[start..])
-	}
-
-	#[cfg(feature = "alloc")]
-	fn read_utf8_to_end<'a>(&mut self, buf: &'a mut String) -> Result<&'a str> {
-		self.read_utf8(self.len(), buf)
-	}
-}
-
-impl BufferAccess for &[u8] {
-	fn buffer_capacity(&self) -> usize { self.len() }
-	fn buffer_count(&self) -> usize { self.len() }
-	fn buffer(&self) -> &[u8] { self }
-	fn fill_buffer(&mut self) -> Result<&[u8]> { Ok(self) }
-
-	fn clear_buffer(&mut self) {
-		*self = &[];
-	}
-
-	fn drain_buffer(&mut self, count: usize) {
-		*self = &self[count..];
-	}
-}
+use crate::{DataSink, Error, Result};
 
 impl DataSink for &mut [u8] {
 	fn write_bytes(&mut self, buf: &[u8]) -> Result {
@@ -126,12 +70,4 @@ fn mut_slice_push_u8<T>(
 		*sink = &mut take(sink)[1..];
 		Ok(())
 	}
-}
-
-pub(crate) fn read_bytes_infallible<'a>(source: &mut &[u8], sink: &'a mut [u8]) -> &'a [u8] {
-	let len = source.len().min(sink.len());
-	let (filled, _) = sink.split_at_mut(len);
-	filled.copy_from_slice(&source[..len]);
-	*source = &source[len..];
-	filled
 }

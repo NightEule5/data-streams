@@ -42,10 +42,6 @@
 //!         self.buffer.drain(..count);
 //!         Ok(&buf[..count])
 //!     }
-//!
-//!     fn read_utf8_to_end<'a>(&mut self, buf: &'a mut String) -> Result<&'a str> {
-//!         self.read_utf8(self.available(), buf)
-//!     }
 //! }
 //!
 //! struct MySink {
@@ -70,6 +66,9 @@
 //! - `alloc`: Provides impls for dynamically allocated types such as [`Vec`], and source methods
 //!   for reading into these. Requires a heap allocator, which may not be present on platforms
 //!   without the standard library.
+//! - `utf8`: Enables reading UTF-8-validated data from sources, and writing to [`String`]s, using a
+//!   very fast SIMD validation algorithm from the [`simdutf8`](https://github.com/rusticstuff/simdutf8)
+//!   crate. UTF-8 can be written to sinks without this feature.
 //! - `unstable`: Provides unstable features only present on the nightly compiler. Enables:
 //!   - `unstable_borrowed_buf`: Provides [`DataSource`] impls for [`BorrowedBuf`](core::io::BorrowedBuf)
 //!     and [`BorrowedCursor`](core::io::BorrowedCursor).
@@ -104,8 +103,20 @@ mod core_io;
 mod std_io;
 mod wrappers;
 
+pub mod markers {
+	pub mod source {
+		pub use crate::source::markers::{InfiniteSource, SourceSize};
+	}
+}
+
 pub use error::Error;
+#[cfg(feature = "utf8")]
+pub use error::{Utf8Error, Utf8ErrorKind, SimdUtf8Error};
 pub use sink::{DataSink, GenericDataSink};
+#[cfg(feature = "alloc")]
+pub use sink::VecSink;
 pub use source::{BufferAccess, DataSource, GenericDataSource};
+#[cfg(feature = "alloc")]
+pub use source::VecSource;
 
 pub type Result<T = (), E = Error> = core::result::Result<T, E>;

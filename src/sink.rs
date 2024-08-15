@@ -1,6 +1,10 @@
 // Copyright 2024 - Strixpyrr
 // SPDX-License-Identifier: Apache-2.0
 
+#[cfg(feature = "alloc")]
+use alloc::vec::Vec;
+#[cfg(all(feature = "alloc", feature = "utf8"))]
+use alloc::string::String;
 use num_traits::PrimInt;
 use bytemuck::{bytes_of, Pod};
 use crate::Result;
@@ -253,3 +257,63 @@ pub trait GenericDataSink<T: Pod>: DataSink {
 }
 
 impl<S: DataSink + ?Sized, T: Pod> GenericDataSink<T> for S { }
+
+/// A sink stream of vector data.
+#[cfg(feature = "alloc")]
+pub trait VecSink: DataSink {
+	/// Writes all bytes from a [`Vec`].
+	/// 
+	/// # Errors
+	/// 
+	/// May return [`Overflow`](Error::Overflow) if the sink would exceed some hard
+	/// storage limit. In the case, the stream is filled completely, excluding the
+	/// overflowing bytes.
+	/// 
+	/// # Implementation
+	/// 
+	/// By default, this delegates to [`write_bytes`]. Some implementations may be
+	/// may better optimize for owned data.
+	/// 
+	/// [`write_bytes`]: DataSink::write_bytes
+	fn write_owned_bytes(&mut self, buf: Vec<u8>) -> Result;
+	/// Writes all UTF-8 bytes from a [`String`].
+	///
+	/// # Errors
+	///
+	/// May return [`Overflow`](Error::Overflow) if the sink would exceed some hard
+	/// storage limit. In the case, the stream is filled completely, excluding the
+	/// overflowing bytes.
+	///
+	/// # Implementation
+	///
+	/// By default, this delegates to [`write_utf8`]. Some implementations may be
+	/// may better optimize for owned data.
+	///
+	/// [`write_utf8`]: DataSink::write_utf8
+	#[cfg(feature = "utf8")]
+	fn write_owned_utf8(&mut self, buf: String) -> Result;
+}
+
+#[cfg(all(feature = "alloc", feature = "unstable_specialization"))]
+impl<T: DataSink> VecSink for T {
+	default fn write_owned_bytes(&mut self, buf: Vec<u8>) -> Result {
+		self.write_bytes(&buf)
+	}
+
+	#[cfg(feature = "utf8")]
+	default fn write_owned_utf8(&mut self, buf: String) -> Result {
+		self.write_utf8(&buf)
+	}
+}
+
+#[cfg(all(feature = "alloc", not(feature = "unstable_specialization")))]
+impl<T: DataSink> VecSink for T {
+	fn write_owned_bytes(&mut self, buf: Vec<u8>) -> Result {
+		self.write_bytes(&buf)
+	}
+
+	#[cfg(feature = "utf8")]
+	fn write_owned_utf8(&mut self, buf: String) -> Result {
+		self.write_utf8(&buf)
+	}
+}

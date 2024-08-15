@@ -3,86 +3,16 @@
 
 #![cfg(feature = "alloc")]
 
-use alloc::{
-	collections::VecDeque,
-	string::String,
-	vec::Vec
-};
-use core::str::from_utf8_unchecked;
+use alloc::{collections::VecDeque, vec::Vec};
+#[cfg(feature = "utf8")]
+use core::mem::MaybeUninit;
+#[cfg(feature = "utf8")]
 use simdutf8::compat::from_utf8;
-use crate::{
-	BufferAccess,
-	DataSink,
-	DataSource,
-	Result,
-};
-
-impl DataSource for Vec<u8> {
-	fn available(&self) -> usize { self.len() }
-
-	fn request(&mut self, count: usize) -> Result<bool> {
-		Ok(self.len() >= count)
-	}
-
-	fn skip(&mut self, mut count: usize) -> Result<usize> {
-		count = count.min(self.len());
-		self.drain_buffer(count);
-		Ok(count)
-	}
-
-	fn read_bytes<'a>(&mut self, buf: &'a mut [u8]) -> Result<&'a [u8]> {
-		let slice = self.as_slice().read_bytes(buf)?;
-		self.drain_buffer(slice.len());
-		Ok(slice)
-	}
-
-	fn read_utf8<'a>(&mut self, mut count: usize, buf: &'a mut String) -> Result<&'a str> {
-		if buf.is_empty() && count >= self.len() {
-			// If the string is empty and all bytes are being read, we can avoid
-			// copying by replacing the buffer with the vec.
-			from_utf8(self)?;
-			// Todo: This can be replaced with a SIMD version of String::from_utf8
-			//  when simdutf8#73 is implemented.
-			*buf = unsafe {
-				String::from_utf8_unchecked(core::mem::take(self))
-			};
-			return Ok(buf)
-		}
-
-		count = count.min(self.len());
-		let bytes = &self[..count];
-		let start_len = buf.len();
-		buf.push_str(from_utf8(bytes)?);
-		self.drain_buffer(count);
-		Ok(&buf[start_len..])
-	}
-
-	fn read_utf8_to_end<'a>(&mut self, buf: &'a mut String) -> Result<&'a str> {
-		self.read_utf8(self.len(), buf)
-	}
-}
-
-impl BufferAccess for Vec<u8> {
-	fn buffer_capacity(&self) -> usize { self.capacity() }
-
-	fn buffer(&self) -> &[u8] { self }
-
-	fn fill_buffer(&mut self) -> Result<&[u8]> {
-		Ok(self) // Nothing to read
-	}
-
-	fn clear_buffer(&mut self) {
-		self.clear();
-	}
-
-	fn drain_buffer(&mut self, count: usize) {
-		if count == self.len() {
-			self.clear();
-		} else {
-			self.drain(..count);
-		}
-	}
-}
+#[cfg(feature = "utf8")]
+use crate::Error;
+use crate::{BufferAccess, DataSink, DataSource, Result};
+use crate::markers::source::SourceSize;
+use crate::source::VecSource;
 
 impl DataSink for Vec<u8> {
 	fn write_bytes(&mut self, buf: &[u8]) -> Result {
@@ -125,24 +55,39 @@ impl DataSource for VecDeque<u8> {
 		Ok(&buf[..count])
 	}
 
-	fn read_utf8<'a>(&mut self, mut count: usize, buf: &'a mut String) -> Result<&'a str> {
-		count = count.min(self.len());
-		let start_len = buf.len();
+	/// Reads bytes into a slice, returning them as a UTF-8 string if valid.
+	///
+	/// # Errors
+	///
+	/// Returns [`Error::Utf8`] if invalid UTF-8 is read. This implementation only
+	/// consumes valid UTF-8. `buf` is left with a valid UTF-8 string whose length
+	/// is given by the error, [`Utf8Error::valid_up_to`]. This slice can be safely
+	/// converted to a string with [`from_str_unchecked`] or [`Utf8Error::split_valid`].
+	///
+	/// [`Utf8Error::valid_up_to`]: simdutf8::compat::Utf8Error::valid_up_to
+	/// [`from_str_unchecked`]: core::str::from_utf8_unchecked
+	#[cfg(feature = "utf8")]
+	fn read_utf8<'a>(&mut self, buf: &'a mut [u8]) -> Result<&'a str> {
 		match self.as_slices() {
-			(bytes, &[]) => {
-				// The deque is contiguous, validate its data in one go.
-				let bytes = &bytes[..count];
-				buf.push_str(from_utf8(bytes)?);
-				self.drain_buffer(count);
+			(mut bytes, _) if bytes.len() >= buf.len() => {
+				// The deque is contiguous up to the buffer length, validate its
+				// data in one go.
+				let len = bytes.len();
+				let result = bytes.read_utf8(buf);
+				let consumed = len - bytes.len();
+				self.drain_buffer(consumed);
+				result
 			}
 			(mut a, mut b) => {
 				// The deque is discontiguous. Validate the first slice, then the
 				// second. If the first slice has an incomplete char, attempt to
 				// rotate it into the second slice before proceeding.
-				
-				let str_a = match from_utf8(a) {
-					Ok(str) => str,
-					Err(error) if error.error_len().is_none() => {
+
+				let mut slice = &mut *buf;
+
+				let offset = match a.read_utf8(slice) {
+					Ok(str) => str.len(),
+					Err(Error::Utf8(error)) if error.error_len().is_none() => {
 						// Incomplete char. Check if the char is completed on the
 						// second slice, then rotate such that the second slice
 						// contains the completed char.
@@ -150,33 +95,45 @@ impl DataSource for VecDeque<u8> {
 						let incomplete = a.len() - char_start;
 						let width = utf8_char_width(a[char_start]);
 						let remaining = width - incomplete;
-						
+
 						if b.len() < remaining {
+							// The char is actually incomplete. Consume the valid
+							// bytes, then return the error.
+							self.drain_buffer(char_start);
 							return Err(error.into())
 						}
-						
+
 						self.rotate_right(incomplete);
 						(a, b) = self.as_slices();
 						assert_eq!(a.len(), char_start);
-						unsafe {
-							// Safety: this slice has been checked to contain valid
-							// UTF-8.
-							from_utf8_unchecked(a)
-						}
+						char_start
 					}
-					Err(error) => return Err(error.into())
+					Err(error @ Error::Utf8(_)) =>
+						// Invalid bytes, this error is unrecoverable.
+						return Err(error),
+					Err(_) => unreachable!() // <[u8]>::read_utf8 only ever returns Error::Utf8.
 				};
-				let str_b = from_utf8(b)?;
-				buf.try_reserve(str_a.len() + str_b.len())?;
-				buf.push_str(str_a);
-				buf.push_str(str_b);
+				slice = &mut slice[offset..];
+
+				match b.read_utf8(slice) {
+					Ok(str) => {
+						let valid = offset + str.len();
+						self.drain_buffer(valid);
+						Ok(unsafe {
+							// Safety: these bytes have been validated as UTF-8 up
+							// this point.
+							core::str::from_utf8_unchecked(&buf[..valid])
+						})
+					}
+					Err(Error::Utf8(mut error)) => {
+						error.set_offset(offset);
+						self.drain_buffer(error.valid_up_to());
+						Err(Error::Utf8(error))
+					}
+					Err(_) => unreachable!() // <[u8]>::read_utf8 only ever returns Error::Utf8.
+				}
 			}
 		}
-		Ok(&buf[start_len..])
-	}
-
-	fn read_utf8_to_end<'a>(&mut self, buf: &'a mut String) -> Result<&'a str> {
-		self.read_utf8(self.len(), buf)
 	}
 }
 
@@ -202,6 +159,49 @@ impl BufferAccess for VecDeque<u8> {
 	}
 }
 
+impl VecSource for VecDeque<u8> {
+	fn read_to_end<'a>(&mut self, buf: &'a mut Vec<u8>) -> Result<&'a [u8]> {
+		let start = buf.len();
+		buf.extend(core::mem::take(self));
+		Ok(&buf[start..])
+	}
+
+	#[cfg(feature = "utf8")]
+	fn read_utf8_to_end<'a>(&mut self, buf: &'a mut alloc::string::String) -> Result<&'a str> {
+		let start_len = buf.len();
+		buf.try_reserve(self.len())?;
+		unsafe {
+			// Safety: the existing contents are not changed, and when this block
+			// ends the buffer will have been checked as valid UTF-8.
+			let buf = buf.as_mut_vec();
+			
+			let slice = {
+				let spare = &mut buf.spare_capacity_mut()[..self.len()];
+				spare.fill(MaybeUninit::new(0));
+				// Safety: read_utf8 does not read from the buffer, and the returned
+				// slice is guaranteed to be initialized.
+				&mut *(core::ptr::from_mut::<[MaybeUninit<u8>]>(spare) as *mut [u8])
+			};
+			
+			let result = self.read_utf8(slice);
+			let valid_len = match result.as_ref() {
+				Ok(valid) => valid.len(),
+				Err(Error::Utf8(error)) => error.valid_up_to(),
+				Err(_) => unreachable!() // read_utf8 only returns Error::Utf8.
+			};
+			// Safety: these bytes are initialized and valid UTF-8.
+			buf.set_len(start_len + valid_len);
+		}
+		self.clear();
+		Ok(&buf[start_len..])
+	}
+}
+
+unsafe impl SourceSize for VecDeque<u8> {
+	fn lower_bound(&self) -> u64 { self.len() as u64 }
+	fn upper_bound(&self) -> Option<u64> { Some(self.len() as u64) }
+}
+
 impl DataSink for VecDeque<u8> {
 	fn write_bytes(&mut self, buf: &[u8]) -> Result {
 		self.try_reserve(buf.len())?;
@@ -220,7 +220,8 @@ impl DataSink for VecDeque<u8> {
 	}
 }
 
-impl DataSink for String {
+#[cfg(feature = "utf8")]
+impl DataSink for alloc::string::String {
 	fn write_bytes(&mut self, buf: &[u8]) -> Result {
 		self.push_str(from_utf8(buf)?);
 		Ok(())
@@ -228,6 +229,7 @@ impl DataSink for String {
 }
 
 /// A reimplementation of the unstable [`core::str::utf8_char_width`] function.
+#[cfg(feature = "utf8")]
 fn utf8_char_width(byte: u8) -> usize {
 	const UTF8_CHAR_WIDTH: &[u8; 256] = &[
 		// 1  2  3  4  5  6  7  8  9  A  B  C  D  E  F
@@ -251,4 +253,3 @@ fn utf8_char_width(byte: u8) -> usize {
 	
 	UTF8_CHAR_WIDTH[byte as usize] as usize
 }
-
