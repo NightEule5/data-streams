@@ -337,7 +337,7 @@ pub trait VecSource: DataSource {
 		impls::read_to_end(self, buf, 0)
 	}
 	}
-	
+
 	spec_default! {
 	/// Reads UTF-8 bytes into `buf` until the end of the stream, returning the
 	/// string read. If invalid bytes are encountered, an error is returned and
