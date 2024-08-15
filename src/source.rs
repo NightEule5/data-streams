@@ -8,6 +8,8 @@ use simdutf8::compat::from_utf8;
 use crate::{Error, Result};
 
 mod exact_size;
+mod impls;
+pub mod markers;
 
 /// A source stream of data.
 pub trait DataSource {
@@ -50,25 +52,25 @@ pub trait DataSource {
 
 	/// Consumes up to `count` bytes in the stream, returning the number of bytes
 	/// consumed if successful. At least the available count may be consumed.
-	/// 
+	///
 	/// # Errors
-	/// 
+	///
 	/// Returns any IO errors encountered.
 	fn skip(&mut self, count: usize) -> Result<usize>;
 	/// Reads bytes into a slice, returning the bytes read. This method is greedy;
 	/// it consumes as many bytes as it can, until `buf` is filled or no more bytes
 	/// are read.
-	/// 
+	///
 	/// # Errors
-	/// 
+	///
 	/// Returns any IO errors encountered.
 	fn read_bytes<'a>(&mut self, buf: &'a mut [u8]) -> Result<&'a [u8]>;
 	/// Reads the exact length of bytes into a slice, returning the bytes read if
 	/// successful, or an end-of-stream error if not. Bytes are not consumed if an
 	/// end-of-stream error is returned.
-	/// 
+	///
 	/// # Errors
-	/// 
+	///
 	/// Returns [`Error::End`] with the slice length if the exact number of bytes
 	/// cannot be read. The bytes that were read remain in the buffer, but have
 	/// been consumed from the source.
@@ -76,18 +78,21 @@ pub trait DataSource {
 		default_read_exact_bytes(self, buf)
 	}
 	/// Reads an array with a size of `N` bytes.
-	/// 
+	///
 	/// # Errors
-	/// 
+	///
 	/// Returns [`Error::End`] with the array length if [`N`] bytes cannot be read.
-	fn read_array<const N: usize>(&mut self) -> Result<[u8; N]> where Self: Sized {
+	fn read_array<const N: usize>(&mut self) -> Result<[u8; N]>
+	where
+		Self: Sized
+	{
 		default_read_array(self)
 	}
 
 	/// Reads a [`u8`].
-	/// 
+	///
 	/// # Errors
-	/// 
+	///
 	/// Returns [`Error::End`] if the stream ends before exactly `1` byte can be
 	/// read.
 	fn read_u8(&mut self) -> Result<u8> { self.read_data() }
@@ -272,7 +277,7 @@ pub trait DataSource {
 	///         let (valid, invalid) = unsafe {
 	///             // Safe because the buffer has been validated up to this point,
 	///             // according to the error.
- 	///             error.split_valid(buffer)
+	///             error.split_valid(buffer)
 	///         };
 	///         // Do something with invalid bytes...
 	///         valid
@@ -282,7 +287,7 @@ pub trait DataSource {
 	/// # assert_eq!(str, "hello");
 	/// # Ok::<_, Error>(())
 	/// ```
-	/// 
+	///
 	/// [`from_utf8_unchecked`]: core::str::from_utf8_unchecked
 	///
 	/// # Implementation
@@ -296,6 +301,60 @@ pub trait DataSource {
 		let bytes = self.read_bytes(buf)?;
 		let utf8 = from_utf8(bytes)?;
 		Ok(utf8)
+	}
+}
+
+/// A helper macro which conditionally disables the default body of a method if
+/// the specialization feature-gate is not enabled.
+#[cfg(feature = "alloc")]
+macro_rules! spec_default {
+    ($(#[$meta:meta])+fn $name:ident<$lt:lifetime>(&mut $self:ident, $arg:ident: $arg_ty:ty) -> $result:ty $body:block) => {
+		$(#[$meta])+
+		#[cfg(feature = "unstable_specialization")]
+		fn $name<$lt>(&mut $self, $arg: $arg_ty) -> $result $body
+		$(#[$meta])+
+		#[cfg(not(feature = "unstable_specialization"))]
+		fn $name<$lt>(&mut $self, $arg: $arg_ty) -> $result;
+	};
+}
+
+/// A source stream reading data into vectors.
+#[cfg(feature = "alloc")]
+pub trait VecSource: DataSource {
+	spec_default! {
+	/// Reads bytes into `buf` until the presumptive end of the stream, returning
+	/// the bytes read. If an error is returned, any bytes read remain in `buf`.
+	///
+	/// Note that the stream may not necessarily have ended; more bytes may still
+	/// be read in subsequent calls. The stream's end is only *presumed* to be
+	/// reached. For example, a TCP socket may read no data signaling an end, but
+	/// later begin reading again.
+	///
+	/// # Errors
+	///
+	/// Returns any IO errors encountered.
+	fn read_to_end<'a>(&mut self, buf: &'a mut alloc::vec::Vec<u8>) -> Result<&'a [u8]> {
+		impls::read_to_end(self, buf, 0)
+	}
+	}
+	
+	spec_default! {
+	/// Reads UTF-8 bytes into `buf` until the end of the stream, returning the
+	/// string read. If invalid bytes are encountered, an error is returned and
+	/// `buf` is unchanged. In this case, the stream is left in a state with an
+	/// undefined number of bytes read.
+	///
+	/// # Errors
+	///
+	/// Returns [`Error::Utf8`] if invalid UTF-8 is read. The stream is left in a
+	/// state with all bytes consumed from it. `buf` contains the read UTF-8 string
+	/// up to the invalid bytes.
+	#[cfg(feature = "utf8")]
+	fn read_utf8_to_end<'a>(&mut self, buf: &'a mut alloc::string::String) -> Result<&'a str> {
+		unsafe {
+			append_utf8(buf, |buf| impls::read_to_end(self, buf, 0).map(<[u8]>::len))
+		}
+	}
 	}
 }
 
@@ -338,7 +397,7 @@ pub trait GenericDataSource<T: Pod>: DataSource {
 impl<S: DataSource + ?Sized, T: Pod> GenericDataSource<T> for S { }
 
 /// Accesses a source's internal buffer.
-pub trait BufferAccess {
+pub trait BufferAccess: DataSource {
 	/// Returns the capacity of the internal buffer.
 	fn buffer_capacity(&self) -> usize;
 	/// Returns the byte count contained in the internal buffer.
@@ -366,6 +425,13 @@ pub trait BufferAccess {
 	/// 
 	/// This method panics if `count` exceeds the buffer length.
 	fn drain_buffer(&mut self, count: usize);
+	/// Bypasses the internal buffer by returning the underlying source, or `self`
+	/// if this behavior is not supported. Note that not fully draining the buffer
+	/// before bypassing it will cause data loss.
+	fn bypass_buffer(&mut self) -> &mut impl DataSource where Self: Sized {
+		self.clear_buffer();
+		self
+	}
 }
 
 #[cfg(feature = "unstable_specialization")]
@@ -393,7 +459,7 @@ impl<T: BufferAccess + ?Sized> DataSource for T {
 			if buf.is_empty() {
 				break
 			}
-			
+
 			let count = buf.read_bytes(slice).unwrap().len();
 			self.drain_buffer(count);
 			slice = &mut slice[count..];
@@ -421,7 +487,7 @@ impl<T: BufferAccess + ?Sized> DataSource for T {
 			if buf.is_empty() {
 				break
 			}
-			
+
 			let count = match buf.read_utf8(slice) {
 				Ok(str) => str.len(),
 				Err(Error::Utf8(error)) =>
@@ -437,8 +503,20 @@ impl<T: BufferAccess + ?Sized> DataSource for T {
 	}
 }
 
+#[cfg(all(feature = "alloc", feature = "unstable_specialization"))]
+impl<T: BufferAccess> VecSource for T {
+	default fn read_to_end<'a>(&mut self, buf: &'a mut alloc::vec::Vec<u8>) -> Result<&'a [u8]> {
+		impls::buf_read_to_end(self, buf)
+	}
+
+	#[cfg(feature = "utf8")]
+	default fn read_utf8_to_end<'a>(&mut self, buf: &'a mut alloc::string::String) -> Result<&'a str> {
+		impls::buf_read_utf8_to_end(self, buf)
+	}
+}
+
 #[allow(dead_code)]
-pub(crate) fn default_request(source: &mut (impl BufferAccess + DataSource + ?Sized), count: usize) -> Result<bool> {
+pub(crate) fn default_request(source: &mut (impl BufferAccess + ?Sized), count: usize) -> Result<bool> {
 	if source.available() < count {
 		let buf_len = source.buffer_count();
 		let spare_capacity = source.buffer_capacity() - buf_len;
@@ -457,7 +535,7 @@ pub(crate) fn default_request(source: &mut (impl BufferAccess + DataSource + ?Si
 
 // Todo: after consuming, loop fill_buf and consume.
 #[allow(dead_code)]
-pub(crate) fn default_skip(source: &mut (impl BufferAccess + DataSource + ?Sized), mut count: usize) -> usize {
+pub(crate) fn default_skip(source: &mut (impl BufferAccess + ?Sized), mut count: usize) -> usize {
 	let avail = source.available();
 	count = count.min(avail);
 	source.drain_buffer(count);
@@ -524,7 +602,7 @@ fn default_read_exact_bytes<'a>(source: &mut (impl DataSource + ?Sized), buf: &'
 }
 
 #[cfg(feature = "unstable_specialization")]
-fn buf_read_exact_bytes<'a>(source: &mut (impl BufferAccess + DataSource + ?Sized), buf: &'a mut [u8]) -> Result<&'a [u8]> {
+fn buf_read_exact_bytes<'a>(source: &mut (impl BufferAccess + ?Sized), buf: &'a mut [u8]) -> Result<&'a [u8]> {
 	let len = buf.len();
 	match source.require(len) {
 		Ok(()) => try_read_exact_contiguous(source, buf),

@@ -3,7 +3,7 @@
 
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec;
-#[cfg(feature = "utf8")]
+#[cfg(all(feature = "alloc", feature = "utf8"))]
 use alloc::string::String;
 use num_traits::PrimInt;
 use bytemuck::{bytes_of, Pod};

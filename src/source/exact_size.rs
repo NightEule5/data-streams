@@ -5,6 +5,7 @@ use core::ops::Deref;
 #[cfg(feature = "utf8")]
 use simdutf8::compat::from_utf8;
 use crate::{BufferAccess, DataSource, Result};
+use crate::markers::source::SourceSize;
 
 trait ExactSizeBuffer: Deref<Target = [u8]> {
 	fn len(&self) -> usize { (**self).len() }
@@ -86,6 +87,11 @@ impl BufferAccess for &[u8] {
 	fn drain_buffer(&mut self, count: usize) { self.consume(count); }
 }
 
+unsafe impl SourceSize for &[u8] {
+	fn lower_bound(&self) -> u64 { self.len() as u64 }
+	fn upper_bound(&self) -> Option<u64> { Some(self.len() as u64) }
+}
+
 #[cfg(feature = "alloc")]
 impl ExactSizeBuffer for alloc::vec::Vec<u8> {
 	fn consume(&mut self, count: usize) {
@@ -106,4 +112,10 @@ impl BufferAccess for alloc::vec::Vec<u8> {
 	fn fill_buffer(&mut self) -> Result<&[u8]> { Ok(self) }
 
 	fn drain_buffer(&mut self, count: usize) { self.consume(count); }
+}
+
+#[cfg(feature = "alloc")]
+unsafe impl SourceSize for alloc::vec::Vec<u8> {
+	fn lower_bound(&self) -> u64 { self.len() as u64 }
+	fn upper_bound(&self) -> Option<u64> { Some(self.len() as u64) }
 }

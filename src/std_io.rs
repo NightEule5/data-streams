@@ -2,27 +2,43 @@
 
 #![cfg(feature = "std")]
 
-use std::io::{
-	BufRead,
-	BufReader,
-	BufWriter,
-	Cursor,
-	Empty,
-	ErrorKind,
-	Read,
-	Repeat,
-	Sink,
-	Take,
-	Write,
-};
+#[cfg(all(feature = "alloc", feature = "utf8"))]
+use alloc::string::String;
+use std::io::{BufRead, BufReader, BufWriter, Cursor, Empty, ErrorKind, Read, Repeat, Seek, Sink, Take, Write};
 use crate::{
-	Result,
-	Error,
-	DataSink,
 	BufferAccess,
+	DataSink,
 	DataSource,
+	Error,
+	Result,
 	source::default_skip,
 };
+use crate::markers::source::{InfiniteSource, SourceSize};
+
+#[cfg(any(unix, windows, target_os = "wasi"))]
+unsafe impl SourceSize for &std::fs::File {
+	fn upper_bound(&self) -> Option<u64> {
+		#[cfg(unix)]
+		let size = std::os::unix::fs::MetadataExt::size;
+		#[cfg(windows)]
+		let size = std::os::windows::fs::MetadataExt::file_size;
+		#[cfg(target_os = "wasi")]
+		let size = std::os::wasi::fs::MetadataExt::size;
+		let pos = (&mut &**self).stream_position().ok()?;
+		self.metadata()
+			.ok()
+			.as_ref()
+			.map(size)
+			.map(|s| s - pos)
+	}
+}
+
+#[cfg(any(unix, windows, target_os = "wasi"))]
+unsafe impl SourceSize for std::fs::File {
+	fn upper_bound(&self) -> Option<u64> {
+		(&self).upper_bound()
+	}
+}
 
 impl<R: Read + ?Sized> DataSource for BufReader<R> {
 	#[cfg(not(feature = "unstable_specialization"))]
@@ -32,7 +48,7 @@ impl<R: Read + ?Sized> DataSource for BufReader<R> {
 	fn request(&mut self, count: usize) -> Result<bool> {
 		crate::source::default_request(self, count)
 	}
-	
+
 	fn skip(&mut self, count: usize) -> Result<usize> {
 		Ok(buf_read_skip(self, count))
 	}
@@ -44,6 +60,21 @@ impl<R: Read + ?Sized> DataSource for BufReader<R> {
 	fn read_exact_bytes<'a>(&mut self, buf: &'a mut [u8]) -> Result<&'a [u8]> {
 		buf_read_exact_bytes(self, buf)
 	}
+
+	/*#[cfg(feature = "alloc")]
+	fn read_to_end<'a>(&mut self, buf: &'a mut Vec<u8>) -> Result<&'a [u8]> {
+		let start = buf.len();
+		let count = Read::read_to_end(self, buf)?;
+		assert_eq!(count, buf.len() - start);
+		Ok(&buf[start..])
+	}
+
+	#[cfg(all(feature = "alloc", feature = "utf8"))]
+	fn read_utf8_to_end<'a>(&mut self, buf: &'a mut String) -> Result<&'a str> {
+		unsafe {
+			crate::source::append_utf8(buf, |buf| Ok(Read::read_to_end(self, buf)?))
+		}
+	}*/
 }
 
 impl<R: Read + ?Sized> BufferAccess for BufReader<R> {
@@ -57,6 +88,16 @@ impl<R: Read + ?Sized> BufferAccess for BufReader<R> {
 
 	fn drain_buffer(&mut self, count: usize) {
 		self.consume(count);
+	}
+}
+
+unsafe impl<R: Read + SourceSize + ?Sized> SourceSize for BufReader<R> {
+	fn lower_bound(&self) -> u64 {
+		self.get_ref().lower_bound()
+	}
+
+	fn upper_bound(&self) -> Option<u64> {
+		self.get_ref().upper_bound()
 	}
 }
 
@@ -113,6 +154,11 @@ impl<T: AsRef<[u8]>> BufferAccess for Cursor<T> {
 	fn drain_buffer(&mut self, count: usize) {
 		self.consume(count);
 	}
+}
+
+unsafe impl<T: AsRef<[u8]>> SourceSize for Cursor<T> {
+	fn lower_bound(&self) -> u64 { self.buffer_count() as u64 }
+	fn upper_bound(&self) -> Option<u64> { Some(self.buffer_count() as u64) }
 }
 
 impl<T> DataSink for Cursor<T> where Self: Write {
@@ -177,6 +223,12 @@ impl<T: BufferAccess + BufRead> BufferAccess for Take<T> {
 	}
 }
 
+unsafe impl<T> SourceSize for Take<T> {
+	fn upper_bound(&self) -> Option<u64> {
+		Some(self.limit())
+	}
+}
+
 macro_rules! fixed_stream_impl {
     (impl $trait:ident for $stream:ident {
 		$($item:item)+
@@ -211,7 +263,24 @@ impl DataSource for Empty {
 	fn read_utf8<'a>(&mut self, _: &'a mut [u8]) -> Result<&'a str> {
 		Ok("")
 	}
+	
+	/*#[cfg(feature = "alloc")]
+	fn read_to_end<'a>(&mut self, _: &'a mut Vec<u8>) -> Result<&'a [u8]> {
+		Ok(&[])
+	}
+	
+	#[cfg(all(feature = "alloc", feature = "utf8"))]
+	fn read_utf8_to_end<'a>(&mut self, _: &'a mut String) -> Result<&'a str> {
+		Ok("")
+	}*/
 }
+}
+
+unsafe impl SourceSize for Empty {
+	fn upper_bound(&self) -> Option<u64> { Some(0) }
+}
+unsafe impl SourceSize for &Empty {
+	fn upper_bound(&self) -> Option<u64> { Some(0) }
 }
 
 impl DataSink for Empty {
@@ -258,9 +327,21 @@ impl DataSource for Repeat {
 				Err(simdutf8::compat::from_utf8(&bytes[..1]).unwrap_err().into())
 		}
 	}
+
+	/*#[cfg(all(feature = "alloc", not(feature = "unstable_specialization")))]
+	fn read_to_end<'a>(&mut self, _: &'a mut Vec<u8>) -> Result<&'a [u8]> {
+		Err(Error::NoEnd)
+	}
+
+	#[cfg(all(feature = "alloc", feature = "utf8", not(feature = "unstable_specialization")))]
+	fn read_utf8_to_end<'a>(&mut self, _: &'a mut String) -> Result<&'a str> {
+		Err(Error::NoEnd)
+	}*/
 }
 
-fn buf_read_skip(source: &mut (impl BufferAccess + DataSource + ?Sized), count: usize) -> usize {
+unsafe impl InfiniteSource for Repeat { }
+
+fn buf_read_skip(source: &mut (impl BufferAccess + ?Sized), count: usize) -> usize {
 	let mut skip_count = 0;
 	while skip_count < count {
 		let cur_skip_count = default_skip(&mut *source, count);

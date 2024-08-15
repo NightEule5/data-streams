@@ -100,10 +100,20 @@ mod core_io;
 mod std_io;
 mod wrappers;
 
+pub mod markers {
+	pub mod source {
+		pub use crate::source::markers::{InfiniteSource, SourceSize};
+	}
+}
+
 pub use error::Error;
 #[cfg(feature = "utf8")]
 pub use error::{Utf8Error, Utf8ErrorKind, SimdUtf8Error};
-pub use sink::{DataSink, GenericDataSink, VecSink};
+pub use sink::{DataSink, GenericDataSink};
+#[cfg(feature = "alloc")]
+pub use sink::VecSink;
 pub use source::{BufferAccess, DataSource, GenericDataSource};
+#[cfg(feature = "alloc")]
+pub use source::VecSource;
 
 pub type Result<T = (), E = Error> = core::result::Result<T, E>;

@@ -5,10 +5,14 @@
 
 use alloc::{collections::VecDeque, vec::Vec};
 #[cfg(feature = "utf8")]
+use core::mem::MaybeUninit;
+#[cfg(feature = "utf8")]
 use simdutf8::compat::from_utf8;
 #[cfg(feature = "utf8")]
 use crate::Error;
 use crate::{BufferAccess, DataSink, DataSource, Result};
+use crate::markers::source::SourceSize;
+use crate::source::VecSource;
 
 impl DataSink for Vec<u8> {
 	fn write_bytes(&mut self, buf: &[u8]) -> Result {
@@ -153,6 +157,49 @@ impl BufferAccess for VecDeque<u8> {
 			self.drain(..count);
 		}
 	}
+}
+
+impl VecSource for VecDeque<u8> {
+	fn read_to_end<'a>(&mut self, buf: &'a mut Vec<u8>) -> Result<&'a [u8]> {
+		let start = buf.len();
+		buf.extend(core::mem::take(self));
+		Ok(&buf[start..])
+	}
+
+	#[cfg(feature = "utf8")]
+	fn read_utf8_to_end<'a>(&mut self, buf: &'a mut alloc::string::String) -> Result<&'a str> {
+		let start_len = buf.len();
+		buf.try_reserve(self.len())?;
+		unsafe {
+			// Safety: the existing contents are not changed, and when this block
+			// ends the buffer will have been checked as valid UTF-8.
+			let buf = buf.as_mut_vec();
+			
+			let slice = {
+				let spare = &mut buf.spare_capacity_mut()[..self.len()];
+				spare.fill(MaybeUninit::new(0));
+				// Safety: read_utf8 does not read from the buffer, and the returned
+				// slice is guaranteed to be initialized.
+				&mut *(core::ptr::from_mut::<[MaybeUninit<u8>]>(spare) as *mut [u8])
+			};
+			
+			let result = self.read_utf8(slice);
+			let valid_len = match result.as_ref() {
+				Ok(valid) => valid.len(),
+				Err(Error::Utf8(error)) => error.valid_up_to(),
+				Err(_) => unreachable!() // read_utf8 only returns Error::Utf8.
+			};
+			// Safety: these bytes are initialized and valid UTF-8.
+			buf.set_len(start_len + valid_len);
+		}
+		self.clear();
+		Ok(&buf[start_len..])
+	}
+}
+
+unsafe impl SourceSize for VecDeque<u8> {
+	fn lower_bound(&self) -> u64 { self.len() as u64 }
+	fn upper_bound(&self) -> Option<u64> { Some(self.len() as u64) }
 }
 
 impl DataSink for VecDeque<u8> {
