@@ -60,21 +60,6 @@ impl<R: Read + ?Sized> DataSource for BufReader<R> {
 	fn read_exact_bytes<'a>(&mut self, buf: &'a mut [u8]) -> Result<&'a [u8]> {
 		buf_read_exact_bytes(self, buf)
 	}
-
-	/*#[cfg(feature = "alloc")]
-	fn read_to_end<'a>(&mut self, buf: &'a mut Vec<u8>) -> Result<&'a [u8]> {
-		let start = buf.len();
-		let count = Read::read_to_end(self, buf)?;
-		assert_eq!(count, buf.len() - start);
-		Ok(&buf[start..])
-	}
-
-	#[cfg(all(feature = "alloc", feature = "utf8"))]
-	fn read_utf8_to_end<'a>(&mut self, buf: &'a mut String) -> Result<&'a str> {
-		unsafe {
-			crate::source::append_utf8(buf, |buf| Ok(Read::read_to_end(self, buf)?))
-		}
-	}*/
 }
 
 impl<R: Read + ?Sized> BufferAccess for BufReader<R> {
@@ -263,16 +248,6 @@ impl DataSource for Empty {
 	fn read_utf8<'a>(&mut self, _: &'a mut [u8]) -> Result<&'a str> {
 		Ok("")
 	}
-	
-	/*#[cfg(feature = "alloc")]
-	fn read_to_end<'a>(&mut self, _: &'a mut Vec<u8>) -> Result<&'a [u8]> {
-		Ok(&[])
-	}
-	
-	#[cfg(all(feature = "alloc", feature = "utf8"))]
-	fn read_utf8_to_end<'a>(&mut self, _: &'a mut String) -> Result<&'a str> {
-		Ok("")
-	}*/
 }
 }
 
@@ -327,16 +302,6 @@ impl DataSource for Repeat {
 				Err(simdutf8::compat::from_utf8(&bytes[..1]).unwrap_err().into())
 		}
 	}
-
-	/*#[cfg(all(feature = "alloc", not(feature = "unstable_specialization")))]
-	fn read_to_end<'a>(&mut self, _: &'a mut Vec<u8>) -> Result<&'a [u8]> {
-		Err(Error::NoEnd)
-	}
-
-	#[cfg(all(feature = "alloc", feature = "utf8", not(feature = "unstable_specialization")))]
-	fn read_utf8_to_end<'a>(&mut self, _: &'a mut String) -> Result<&'a str> {
-		Err(Error::NoEnd)
-	}*/
 }
 
 unsafe impl InfiniteSource for Repeat { }
