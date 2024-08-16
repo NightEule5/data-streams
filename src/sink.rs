@@ -5,6 +5,8 @@
 use alloc::vec::Vec;
 #[cfg(all(feature = "alloc", feature = "utf8"))]
 use alloc::string::String;
+#[cfg(feature = "unstable_ascii_char")]
+use core::ascii;
 use num_traits::PrimInt;
 use bytemuck::{bytes_of, Pod};
 use crate::Result;
@@ -29,6 +31,17 @@ pub trait DataSink {
 	/// storage limit. In the case, the stream is filled completely, excluding the
 	/// overflowing bytes.
 	fn write_utf8(&mut self, value: &str) -> Result {
+		self.write_bytes(value.as_bytes())
+	}
+	/// Writes an ASCII slice.
+	///
+	/// # Errors
+	///
+	/// May return [`Overflow`](Error::Overflow) if the sink would exceed some hard
+	/// storage limit. In the case, the stream is filled completely, excluding the
+	/// overflowing bytes.
+	#[cfg(feature = "unstable_ascii_char")]
+	fn write_ascii(&mut self, value: &[ascii::Char]) -> Result {
 		self.write_bytes(value.as_bytes())
 	}
 
