@@ -79,12 +79,12 @@ macro_rules! impl_source {
 			fn read_ascii<'a>(&mut self, buf: &'a mut [u8]) -> Result<&'a [core::ascii::Char]> {
 				let len = buf.len().min(self.len());
 				let count = super::count_ascii(&self[..len]);
-				let bytes = self.read_bytes_infallible(&mut buf[..len]);
+				let bytes = self.read_bytes_infallible(&mut buf[..count]);
 				if count == len {
 					// Safety: all bytes have been checked as valid ASCII.
 					Ok(unsafe { bytes.as_ascii_unchecked() })
 				} else {
-					Err(Error::invalid_ascii(bytes[count], count, count))
+					Err(Error::invalid_ascii(self[0], count, count))
 				}
 			}
 		})+
@@ -95,7 +95,7 @@ impl_source! { &[u8]; #[cfg(feature = "alloc")] alloc::vec::Vec<u8> }
 
 impl ExactSizeBuffer for &[u8] {
 	fn consume(&mut self, count: usize) {
-		*self = &self[..count];
+		*self = &self[count..];
 	}
 }
 
