@@ -302,6 +302,18 @@ impl DataSource for Repeat {
 				Err(simdutf8::compat::from_utf8(&bytes[..1]).unwrap_err().into())
 		}
 	}
+
+	#[cfg(feature = "unstable_ascii_char")]
+	fn read_ascii<'a>(&mut self, buf: &'a mut [u8]) -> Result<&'a [core::ascii::Char]> {
+		match self.read_bytes(buf).unwrap() {
+			[] => Ok(&[]),
+			bytes @ [byte, ..] if byte.is_ascii() => Ok(unsafe {
+				// Safety: the byte is valid ASCII.
+				bytes.as_ascii_unchecked()
+			}),
+			bytes @ &[byte, ..] => Err(Error::invalid_ascii(byte, 0, bytes.len()))
+		}
+	}
 }
 
 unsafe impl InfiniteSource for Repeat { }
