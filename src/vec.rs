@@ -8,7 +8,7 @@ use alloc::{collections::VecDeque, vec::Vec};
 use core::mem::MaybeUninit;
 #[cfg(feature = "utf8")]
 use simdutf8::compat::from_utf8;
-#[cfg(feature = "utf8")]
+#[cfg(any(feature = "utf8", feature = "unstable_ascii_char"))]
 use crate::Error;
 use crate::{BufferAccess, DataSink, DataSource, Result};
 use crate::markers::source::SourceSize;
@@ -133,6 +133,48 @@ impl DataSource for VecDeque<u8> {
 					Err(_) => unreachable!() // <[u8]>::read_utf8 only ever returns Error::Utf8.
 				}
 			}
+		}
+	}
+	/// Reads bytes into a slice, returning them as an ASCII slice if valid.
+	///
+	/// # Errors
+	///
+	/// Returns [`Error::Ascii`] if a non-ASCII byte is found. This implementation
+	/// consumes only valid ASCII. `buf` is left with valid ASCII bytes with a
+	/// length of [`AsciiError::valid_up_to`]. The valid slice can be retrieved
+	/// with [`AsciiError::valid_slice`].
+	#[cfg(feature = "unstable_ascii_char")]
+	fn read_ascii<'a>(&mut self, mut buf: &'a mut [u8]) -> Result<&'a [core::ascii::Char]> {
+		use crate::source::count_ascii;
+
+		let buf_len = self.len().min(buf.len());
+		buf = &mut buf[..buf_len];
+		let (mut a, mut b) = self.as_slices();
+		if buf.len() >= a.len() {
+			b = &b[..buf.len() - a.len()];
+		} else {
+			a = &a[..buf.len()];
+			b = &[];
+		}
+		
+		let a_count = count_ascii(a);
+		if a_count == a.len() {
+			buf.copy_from_slice(a);
+			let b_count = count_ascii(b);
+			buf[a_count..][..b_count].copy_from_slice(&b[..b_count]);
+			
+			let result = if b_count == b.len() {
+				// Safety: all data is valid ASCII.
+				Ok(unsafe { buf.as_ascii_unchecked() })
+			} else {
+				Err(Error::invalid_ascii(b[b_count], b_count, b_count))
+			};
+			self.drain_buffer(a_count + b_count);
+			result
+		} else {
+			buf[..a_count].copy_from_slice(&a[..a_count]);
+			self.drain_buffer(a_count);
+			Err(Error::invalid_ascii(buf[a_count], a_count, a_count))
 		}
 	}
 }

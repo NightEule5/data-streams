@@ -14,10 +14,16 @@ default = ["std", "alloc"]
 std = ["num-traits/std", "simdutf8/std"]
 alloc = []
 utf8 = ["simdutf8"]
-unstable = ["unstable_specialization", "unstable_borrowed_buf", "unstable_uninit_slice"]
+unstable = [
+	"unstable_specialization",
+	"unstable_borrowed_buf",
+	"unstable_uninit_slice",
+	"unstable_ascii_char",
+]
 unstable_specialization = []
 unstable_borrowed_buf = []
 unstable_uninit_slice = []
+unstable_ascii_char = []
 
 [dependencies]
 bytemuck = "1.16.1"

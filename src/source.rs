@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use bytemuck::{bytes_of_mut, Pod};
+#[cfg(feature = "unstable_ascii_char")]
+use core::ascii;
 use num_traits::PrimInt;
 #[cfg(feature = "utf8")]
 use simdutf8::compat::from_utf8;
@@ -302,6 +304,41 @@ pub trait DataSource {
 		let utf8 = from_utf8(bytes)?;
 		Ok(utf8)
 	}
+	/// Reads bytes into a slice, returning them as an ASCII slice if valid.
+	///
+	/// # Errors
+	///
+	/// Returns [`Error::Ascii`] if a non-ASCII byte is found. The stream is left
+	/// in an undefined state with up to `buf.len()` bytes consumed, including the
+	/// invalid byte and any subsequent bytes. `buf` contains all consumed bytes.
+	/// The valid ASCII length is given by the error, [`AsciiError::valid_up_to`].
+	/// The number of bytes consumed after the invalid byte is given by
+	/// [`AsciiError::unchecked_count`]. These slices can be safely split with
+	/// [`AsciiError::split_valid`]:
+	///
+	/// ```
+	/// #![feature(ascii_char)]
+	///
+	/// # use data_streams::{DataSource, Error};
+	/// # use core::ascii;
+	/// # let mut source = &[b'h', b'e', b'l', b'l', b'o', 0xFF][..];
+	/// # let buffer = &mut [0; 6];
+	/// let str: &[ascii::Char] = match source.read_ascii(buffer) {
+	///     Ok(str) => str,
+	///     Err(Error::Ascii(error)) => {
+	///         let (valid, invalid) = error.split_valid(buffer);
+	///         // Do something with invalid bytes...
+	///         valid
+	///     }
+	///     Err(error) => return Err(error)
+	/// };
+	/// # assert_eq!(str.as_str(), "hello");
+	/// # Ok::<_, Error>(())
+	/// ```
+	#[cfg(feature = "unstable_ascii_char")]
+	fn read_ascii<'a>(&mut self, buf: &'a mut [u8]) -> Result<&'a [ascii::Char]> {
+		default_read_ascii(self, buf)
+	}
 }
 
 /// A helper macro which conditionally disables the default body of a method if
@@ -501,6 +538,11 @@ impl<T: BufferAccess + ?Sized> DataSource for T {
 		// Safety: valid_len bytes have been validated as UTF-8.
 		Ok(unsafe { core::str::from_utf8_unchecked(&buf[..valid_len]) })
 	}
+
+	#[cfg(feature = "unstable_ascii_char")]
+	default fn read_ascii<'a>(&mut self, buf: &'a mut [u8]) -> Result<&'a [ascii::Char]> {
+		default_read_ascii(self, buf)
+	}
 }
 
 #[cfg(all(feature = "alloc", feature = "unstable_specialization"))]
@@ -642,6 +684,28 @@ pub(crate) fn default_read_utf8<'a>(
 			source.read_bytes(&mut b[len..])
 				  .map(<[u8]>::len)
 		})
+	}
+}
+
+#[cfg(feature = "unstable_ascii_char")]
+fn default_read_ascii<'a>(source: &mut (impl DataSource + ?Sized), buf: &'a mut [u8]) -> Result<&'a [ascii::Char]> {
+	let bytes = source.read_bytes(buf)?;
+	let idx = count_ascii(bytes);
+	if idx == bytes.len() {
+		// Safety: all bytes have been checked as valid ASCII.
+		Ok(unsafe { bytes.as_ascii_unchecked() })
+	} else {
+		Err(Error::invalid_ascii(bytes[idx], idx, bytes.len()))
+	}
+}
+
+#[cfg(feature = "unstable_ascii_char")]
+pub(crate) fn count_ascii(slice: &[u8]) -> usize {
+	if slice.is_ascii() {
+		slice.len()
+	} else {
+		// Safety: is_ascii indicates there is a non-ASCII character somewhere.
+		unsafe { slice.iter().rposition(|b| !b.is_ascii()).unwrap_unchecked() }
 	}
 }
 

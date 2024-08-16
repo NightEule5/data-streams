@@ -5,6 +5,8 @@ use core::ops::Deref;
 #[cfg(feature = "utf8")]
 use simdutf8::compat::from_utf8;
 use crate::{BufferAccess, DataSource, Result};
+#[cfg(feature = "unstable_ascii_char")]
+use crate::Error;
 use crate::markers::source::SourceSize;
 
 trait ExactSizeBuffer: Deref<Target = [u8]> {
@@ -63,6 +65,27 @@ macro_rules! impl_source {
 				};
 				self.consume(consumed);
 				result
+			}
+
+			/// Reads bytes into a slice, returning them as an ASCII slice if valid.
+			///
+			/// # Errors
+			///
+			/// Returns [`Error::Ascii`] if a non-ASCII byte is found. This
+			/// implementation consumes only valid ASCII. `buf` is left with valid
+			/// ASCII bytes with a length of [`AsciiError::valid_up_to`]. The valid
+			/// slice can be retrieved with [`AsciiError::valid_slice`].
+			#[cfg(feature = "unstable_ascii_char")]
+			fn read_ascii<'a>(&mut self, buf: &'a mut [u8]) -> Result<&'a [core::ascii::Char]> {
+				let len = buf.len().min(self.len());
+				let count = super::count_ascii(&self[..len]);
+				let bytes = self.read_bytes_infallible(&mut buf[..len]);
+				if count == len {
+					// Safety: all bytes have been checked as valid ASCII.
+					Ok(unsafe { bytes.as_ascii_unchecked() })
+				} else {
+					Err(Error::invalid_ascii(bytes[count], count, count))
+				}
 			}
 		})+
 	};
