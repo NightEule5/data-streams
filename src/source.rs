@@ -8,6 +8,8 @@ use num_traits::PrimInt;
 #[cfg(feature = "utf8")]
 use simdutf8::compat::from_utf8;
 use crate::{Error, Result};
+#[cfg(feature = "utf8")]
+use crate::utf8::utf8_char_width;
 
 mod exact_size;
 mod impls;
@@ -304,6 +306,20 @@ pub trait DataSource {
 		let utf8 = from_utf8(bytes)?;
 		Ok(utf8)
 	}
+	/// Reads a single UTF-8 codepoint, returning a [`char`] if valid.
+	///
+	/// # Errors
+	///
+	/// Returns [`Error::Utf8`] if invalid UTF-8 is read. The stream is left with
+	/// one to four bytes consumed, depending on the UTF-8 character width encoded
+	/// in the first byte. `buf` contains any consumed bytes.
+	///
+	/// Returns [`Error::End`] if the end-of-stream is reached before the full
+	/// character width is read. `buf` is empty or contains exactly one byte.
+	#[cfg(feature = "utf8")]
+	fn read_utf8_codepoint(&mut self, buf: &mut [u8; 4]) -> Result<char> {
+		Ok(default_read_utf8_codepoint(self, buf)?.parse().unwrap())
+	}
 	/// Reads bytes into a slice, returning them as an ASCII slice if valid.
 	///
 	/// # Errors
@@ -539,6 +555,18 @@ impl<T: BufferAccess + ?Sized> DataSource for T {
 		Ok(unsafe { core::str::from_utf8_unchecked(&buf[..valid_len]) })
 	}
 
+	#[cfg(feature = "utf8")]
+	default fn read_utf8_codepoint(&mut self, buf: &mut [u8; 4]) -> Result<char> {
+		let str = match self.buffer() {
+			&[first_byte, ..] => {
+				let char_width = utf8_char_width(first_byte);
+				self.read_utf8(&mut buf[..char_width])?
+			},
+			[] => default_read_utf8_codepoint(self, buf)?
+		};
+		Ok(str.parse().unwrap())
+	}
+
 	#[cfg(feature = "unstable_ascii_char")]
 	default fn read_ascii<'a>(&mut self, buf: &'a mut [u8]) -> Result<&'a [ascii::Char]> {
 		default_read_ascii(self, buf)
@@ -685,6 +713,15 @@ pub(crate) fn default_read_utf8<'a>(
 				  .map(<[u8]>::len)
 		})
 	}
+}
+
+#[cfg(feature = "utf8")]
+fn default_read_utf8_codepoint<'a>(source: &mut (impl DataSource + ?Sized), buf: &'a mut [u8; 4]) -> Result<&'a str> {
+	let (first_byte, remaining) = buf.split_at_mut(1);
+	source.read_exact_bytes(first_byte)?;
+	let char_width = utf8_char_width(first_byte[0]);
+	source.read_exact_bytes(&mut remaining[..char_width - 1])?;
+	Ok(from_utf8(&buf[..char_width])?)
 }
 
 #[cfg(feature = "unstable_ascii_char")]

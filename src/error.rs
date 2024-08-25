@@ -215,6 +215,20 @@ impl Utf8Error {
 			None => Utf8ErrorKind::IncompleteChar
 		}
 	}
+	/// Returns the validated part of a slice as UTF-8, assuming it has identical
+	/// contents from the slice which produced the error.
+	///
+	/// # Safety
+	///
+	/// The slice length and contents must be identical to the slice which produced
+	/// the error. Passing a shorter and/or unvalidated slice may cause UB, because
+	/// it may index out-of-bounds or invalidate the result.
+	///
+	/// For a safe alternative, use [`valid_slice`](Self::valid_slice).
+	#[must_use]
+	pub unsafe fn valid_slice_unchecked<'a>(&self, bytes: &'a [u8]) -> &'a str {
+		core::str::from_utf8_unchecked(bytes.get_unchecked(..self.valid_up_to()))
+	}
 	/// Splits a slice at the valid UTF-8 index, returning the first slice as a
 	/// string.
 	/// 

@@ -103,6 +103,7 @@ mod slice;
 mod vec;
 mod core_io;
 mod std_io;
+mod utf8;
 mod wrappers;
 
 pub mod markers {

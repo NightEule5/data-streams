@@ -13,11 +13,22 @@ use crate::Error;
 use crate::{BufferAccess, DataSink, DataSource, Result};
 use crate::markers::source::SourceSize;
 use crate::source::VecSource;
+#[cfg(feature = "utf8")]
+use crate::utf8::utf8_char_width;
 
 impl DataSink for Vec<u8> {
 	fn write_bytes(&mut self, buf: &[u8]) -> Result {
 		self.try_reserve(buf.len())?;
 		self.extend_from_slice(buf);
+		Ok(())
+	}
+
+	fn write_utf8_codepoint(&mut self, value: char) -> Result {
+		let start = self.len();
+		let width = value.len_utf8();
+		self.try_reserve(width)?;
+		self.resize(start + width, 0);
+		value.encode_utf8(&mut self[start..]);
 		Ok(())
 	}
 
@@ -264,34 +275,44 @@ impl DataSink for VecDeque<u8> {
 
 #[cfg(feature = "utf8")]
 impl DataSink for alloc::string::String {
+	/// Writes all valid UTF-8 bytes from `buf`.
+	///
+	/// # Errors
+	///
+	/// Returns [`Error::Utf8`] if `buf` contains invalid UTF-8. In this case, any
+	/// valid UTF-8 is written. [`Utf8Error::valid_up_to`] in this error returns
+	/// the number of valid bytes written to the string.
+	///
+	/// [`Error::Allocation`] is returned when capacity cannot be allocated.
 	fn write_bytes(&mut self, buf: &[u8]) -> Result {
-		self.push_str(from_utf8(buf)?);
+		let (valid, result) = match from_utf8(buf).map_err(crate::Utf8Error::from) {
+			Ok(str) => (str, Ok(())),
+			Err(err) =>
+				// Safety: this is safe because we use the same slice passed to the
+				// validator. 
+				(unsafe { err.valid_slice_unchecked(buf) }, Err(err.into()))
+		};
+		self.write_utf8(valid)?;
+		result
+	}
+	/// Writes a UTF-8 string.
+	///
+	/// # Errors
+	///
+	/// [`Error::Allocation`] is returned when capacity cannot be allocated.
+	fn write_utf8(&mut self, value: &str) -> Result {
+		self.try_reserve(value.len())?;
+		self.push_str(value);
 		Ok(())
 	}
-}
-
-/// A reimplementation of the unstable [`core::str::utf8_char_width`] function.
-#[cfg(feature = "utf8")]
-fn utf8_char_width(byte: u8) -> usize {
-	const UTF8_CHAR_WIDTH: &[u8; 256] = &[
-		// 1  2  3  4  5  6  7  8  9  A  B  C  D  E  F
-		1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // 0
-		1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // 1
-		1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // 2
-		1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // 3
-		1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // 4
-		1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // 5
-		1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // 6
-		1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // 7
-		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 8
-		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 9
-		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // A
-		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // B
-		0, 0, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, // C
-		2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, // D
-		3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, // E
-		4, 4, 4, 4, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // F
-	];
-	
-	UTF8_CHAR_WIDTH[byte as usize] as usize
+	/// Writes a single UTF-8 codepoint.
+	/// 
+	/// # Errors
+	/// 
+	/// [`Error::Allocation`] is returned when capacity cannot be allocated.
+	fn write_utf8_codepoint(&mut self, value: char) -> Result {
+		self.try_reserve(value.len_utf8())?;
+		self.push(value);
+		Ok(())
+	}
 }
