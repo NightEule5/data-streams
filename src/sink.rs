@@ -33,6 +33,17 @@ pub trait DataSink {
 	fn write_utf8(&mut self, value: &str) -> Result {
 		self.write_bytes(value.as_bytes())
 	}
+	/// Writes a single UTF-8 codepoint.
+	///
+	/// # Errors
+	///
+	/// May return [`Overflow`](Error::Overflow) if the sink would exceed some hard
+	/// storage limit. In the case, the stream is filled completely, excluding the
+	/// overflowing bytes.
+	fn write_utf8_codepoint(&mut self, value: char) -> Result {
+		let mut buf = [0; 4];
+		self.write_utf8(value.encode_utf8(&mut buf))
+	}
 	/// Writes an ASCII slice.
 	///
 	/// # Errors
