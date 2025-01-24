@@ -1,4 +1,4 @@
-// Copyright 2024 - Strixpyrr
+// Copyright 2025 - Strixpyrr
 // SPDX-License-Identifier: Apache-2.0
 
 #![cfg(feature = "alloc")]
@@ -12,7 +12,7 @@ use simdutf8::compat::from_utf8;
 use crate::Error;
 use crate::{BufferAccess, DataSink, DataSource, Result};
 use crate::markers::source::SourceSize;
-use crate::source::VecSource;
+use crate::source::{max_multiple_of, VecSource};
 #[cfg(feature = "utf8")]
 use crate::utf8::utf8_char_width;
 
@@ -64,6 +64,12 @@ impl DataSource for VecDeque<u8> {
 		count += b.read_bytes(slice)?.len();
 		self.drain_buffer(count);
 		Ok(&buf[..count])
+	}
+
+	fn read_aligned_bytes<'a>(&mut self, buf: &'a mut [u8], alignment: usize) -> Result<&'a [u8]> {
+		if alignment == 0 { return Ok(&[]) }
+		let len = max_multiple_of(self.len().min(buf.len()), alignment);
+		self.read_bytes(&mut buf[..len])
 	}
 
 	/// Reads bytes into a slice, returning them as a UTF-8 string if valid.

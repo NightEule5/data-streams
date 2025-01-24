@@ -38,7 +38,7 @@ use core::mem::MaybeUninit;
 #[cfg(feature = "unstable_uninit_slice")]
 impl DataSink for &mut [MaybeUninit<u8>] {
 	fn write_bytes(&mut self, buf: &[u8]) -> Result {
-		mut_slice_write_bytes(self, buf, |t, s| { MaybeUninit::copy_from_slice(t, s); })
+		mut_slice_write_bytes(self, buf, |t, s| { t.write_copy_of_slice(s); })
 	}
 
 	fn write_u8(&mut self, value: u8) -> Result {

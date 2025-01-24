@@ -1,4 +1,4 @@
-// Copyright 2024 - Strixpyrr
+// Copyright 2025 - Strixpyrr
 // SPDX-License-Identifier: Apache-2.0
 
 use core::ops::Deref;
@@ -8,6 +8,7 @@ use crate::{BufferAccess, DataSource, Result};
 #[cfg(feature = "unstable_ascii_char")]
 use crate::Error;
 use crate::markers::source::SourceSize;
+use crate::source::max_multiple_of;
 
 trait ExactSizeBuffer: Deref<Target = [u8]> {
 	fn len(&self) -> usize { (**self).len() }
@@ -19,6 +20,12 @@ trait ExactSizeBuffer: Deref<Target = [u8]> {
 		filled.copy_from_slice(&self[..len]);
 		self.consume(len);
 		filled
+	}
+	
+	fn read_aligned_bytes_infallible<'a>(&mut self, buf: &'a mut [u8], alignment: usize) -> &'a [u8] {
+		if alignment == 0 { return &[] }
+		let len = max_multiple_of(self.len().min(buf.len()), alignment);
+		self.read_bytes_infallible(&mut buf[..len])
 	}
 }
 
@@ -41,6 +48,10 @@ macro_rules! impl_source {
 		
 			fn read_bytes<'a>(&mut self, buf: &'a mut [u8]) -> Result<&'a [u8]> {
 				Ok(self.read_bytes_infallible(buf))
+			}
+			
+			fn read_aligned_bytes<'a>(&mut self, buf: &'a mut [u8], alignment: usize) -> Result<&'a [u8]> {
+				Ok(self.read_aligned_bytes_infallible(buf, alignment))
 			}
 		
 			/// Reads bytes into a slice, returning them as a UTF-8 string if valid.
