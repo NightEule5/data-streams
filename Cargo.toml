@@ -1,6 +1,6 @@
 [package]
 name = "data-streams"
-version = "2.0.0-pre.2"
+version = "2.0.0-pre.3"
 edition = "2021"
 authors = ["NightEule5 <24661563+NightEule5@users.noreply.github.com>"]
 description = "Extension traits for reading and writing data with streams."
