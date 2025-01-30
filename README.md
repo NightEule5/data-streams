@@ -8,7 +8,7 @@ Add `data-streams` to your dependencies with `cargo add data-streams`, or manual
 
 ```toml
 [dependencies]
-data-streams = "2.0.0-pre.2"
+data-streams = "2.0.0-pre.3"
 ```
 
 ```rust
