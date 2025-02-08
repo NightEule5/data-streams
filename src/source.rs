@@ -1,11 +1,16 @@
-// Copyright 2024 - Strixpyrr
+// Copyright 2025 - Strixpyrr
 // SPDX-License-Identifier: Apache-2.0
 
-use bytemuck::{bytes_of_mut, Pod};
+use bytemuck::{bytes_of_mut, cast_slice_mut, Pod};
+#[cfg(feature = "unstable_ascii_char")]
+use core::ascii;
+use bytemuck::cast_slice;
 use num_traits::PrimInt;
 #[cfg(feature = "utf8")]
 use simdutf8::compat::from_utf8;
 use crate::{Error, Result};
+#[cfg(feature = "utf8")]
+use crate::utf8::utf8_char_width;
 
 mod exact_size;
 mod impls;
@@ -76,6 +81,18 @@ pub trait DataSource {
 	/// been consumed from the source.
 	fn read_exact_bytes<'a>(&mut self, buf: &'a mut [u8]) -> Result<&'a [u8]> {
 		default_read_exact_bytes(self, buf)
+	}
+	/// Reads bytes into a slice in multiples of `alignment`, returning the bytes
+	/// read. This method is greedy; it consumes as many bytes as it can, until
+	/// `buf` is filled or less than `alignment` bytes could be read.
+	/// 
+	/// If the alignment is zero, the returned slice is empty.
+	/// 
+	/// # Errors
+	/// 
+	/// Returns any IO errors encountered.
+	fn read_aligned_bytes<'a>(&mut self, buf: &'a mut [u8], alignment: usize) -> Result<&'a [u8]> {
+		default_read_aligned_bytes(self, buf, alignment)
 	}
 	/// Reads an array with a size of `N` bytes.
 	///
@@ -302,6 +319,55 @@ pub trait DataSource {
 		let utf8 = from_utf8(bytes)?;
 		Ok(utf8)
 	}
+	/// Reads a single UTF-8 codepoint, returning a [`char`] if valid.
+	///
+	/// # Errors
+	///
+	/// Returns [`Error::Utf8`] if invalid UTF-8 is read. The stream is left with
+	/// one to four bytes consumed, depending on the UTF-8 character width encoded
+	/// in the first byte. `buf` contains any consumed bytes.
+	///
+	/// Returns [`Error::End`] if the end-of-stream is reached before the full
+	/// character width is read. `buf` is empty or contains exactly one byte.
+	#[cfg(feature = "utf8")]
+	fn read_utf8_codepoint(&mut self, buf: &mut [u8; 4]) -> Result<char> {
+		Ok(default_read_utf8_codepoint(self, buf)?.parse().unwrap())
+	}
+	/// Reads bytes into a slice, returning them as an ASCII slice if valid.
+	///
+	/// # Errors
+	///
+	/// Returns [`Error::Ascii`] if a non-ASCII byte is found. The stream is left
+	/// in an undefined state with up to `buf.len()` bytes consumed, including the
+	/// invalid byte and any subsequent bytes. `buf` contains all consumed bytes.
+	/// The valid ASCII length is given by the error, [`AsciiError::valid_up_to`].
+	/// The number of bytes consumed after the invalid byte is given by
+	/// [`AsciiError::unchecked_count`]. These slices can be safely split with
+	/// [`AsciiError::split_valid`]:
+	///
+	/// ```
+	/// #![feature(ascii_char)]
+	///
+	/// # use data_streams::{DataSource, Error};
+	/// # use core::ascii;
+	/// # let mut source = &[b'h', b'e', b'l', b'l', b'o', 0xFF][..];
+	/// # let buffer = &mut [0; 6];
+	/// let str: &[ascii::Char] = match source.read_ascii(buffer) {
+	///     Ok(str) => str,
+	///     Err(Error::Ascii(error)) => {
+	///         let (valid, invalid) = error.split_valid(buffer);
+	///         // Do something with invalid bytes...
+	///         valid
+	///     }
+	///     Err(error) => return Err(error)
+	/// };
+	/// # assert_eq!(str.as_str(), "hello");
+	/// # Ok::<_, Error>(())
+	/// ```
+	#[cfg(feature = "unstable_ascii_char")]
+	fn read_ascii<'a>(&mut self, buf: &'a mut [u8]) -> Result<&'a [ascii::Char]> {
+		default_read_ascii(self, buf)
+	}
 }
 
 /// A helper macro which conditionally disables the default body of a method if
@@ -392,6 +458,22 @@ pub trait GenericDataSource<T: Pod>: DataSource {
 		self.read_exact_bytes(bytes_of_mut(&mut value))?;
 		Ok(value)
 	}
+	
+	/// Reads multiple values of generic type `T` supporting an arbitrary bit pattern,
+	/// returning the read values.
+	/// 
+	/// # Errors
+	/// 
+	/// Returns any IO errors encountered.
+	/// 
+	/// # Panics
+	/// 
+	/// Panics if the [`DataSource::read_aligned_bytes`] implementation returns an unaligned slice.
+	fn read_data_slice<'a>(&mut self, buf: &'a mut [T]) -> Result<&'a [T]> {
+		let bytes = self.read_aligned_bytes(cast_slice_mut(buf), size_of::<T>())?;
+		assert_eq!(bytes.len() % size_of::<T>(), 0, "unaligned read implementation");
+		Ok(cast_slice(buf))
+	}
 }
 
 impl<S: DataSource + ?Sized, T: Pod> GenericDataSource<T> for S { }
@@ -449,57 +531,93 @@ impl<T: BufferAccess + ?Sized> DataSource for T {
 	}
 
 	default fn read_bytes<'a>(&mut self, buf: &'a mut [u8]) -> Result<&'a [u8]> {
-		let mut slice = &mut *buf;
-		while !slice.is_empty() {
-			let mut buf = match self.request(slice.len()) {
-				Ok(_) => self.buffer(),
-				Err(Error::InsufficientBuffer { .. }) => self.fill_buffer()?,
-				Err(error) => return Err(error)
-			};
-			if buf.is_empty() {
-				break
-			}
-
-			let count = buf.read_bytes(slice).unwrap().len();
-			self.drain_buffer(count);
-			slice = &mut slice[count..];
-		}
-
-		let unfilled = slice.len();
-		let filled = buf.len() - unfilled;
-		Ok(&buf[..filled])
+		buf_read_bytes(
+			self,
+			buf,
+			<[u8]>::is_empty,
+			|mut source, buf|
+				source.read_bytes(buf).map(<[u8]>::len)
+		)
 	}
 
 	default fn read_exact_bytes<'a>(&mut self, buf: &'a mut [u8]) -> Result<&'a [u8]> {
 		buf_read_exact_bytes(self, buf)
 	}
 
+	/// Reads bytes into a slice in multiples of `alignment`, returning the bytes
+	/// read. This method is greedy; it consumes as many bytes as it can, until
+	/// `buf` is filled or less than `alignment` bytes could be read.
+	///
+	/// If the alignment is zero or `buf`'s length is less than the alignment, the returned slice is
+	/// empty.
+	///
+	/// # Errors
+	///
+	/// Returns any IO errors encountered.
+	/// 
+	/// [`Error::InsufficientBuffer`] is returned without reading if the buffer [capacity] is not
+	/// large enough to hold at least one `alignment` width.
+	/// 
+	/// [capacity]: Self::buffer_capacity
+	default fn read_aligned_bytes<'a>(&mut self, buf: &'a mut [u8], alignment: usize) -> Result<&'a [u8]> {
+		if alignment == 0 { return Ok(&[]) }
+		if self.buffer_capacity() < alignment {
+			let spare_capacity = self.buffer_capacity() - self.buffer_count();
+			return Err(Error::InsufficientBuffer {
+				spare_capacity,
+				required_count: alignment
+			})
+		}
+		
+		let len = buf.len() / alignment * alignment;
+		buf_read_bytes(
+			self,
+			&mut buf[..len],
+			|buf| buf.len() < alignment,
+			|mut source, buf|
+				source.read_aligned_bytes(buf, alignment).map(<[u8]>::len)
+		)
+	}
+
 	#[cfg(feature = "utf8")]
 	default fn read_utf8<'a>(&mut self, buf: &'a mut [u8]) -> Result<&'a str> {
-		let mut slice = &mut *buf;
 		let mut valid_len = 0;
-		while !slice.is_empty() {
-			let mut buf = match self.request(slice.len()) {
-				Ok(_) => self.buffer(),
-				Err(Error::InsufficientBuffer { .. }) => self.fill_buffer()?,
-				Err(error) => return Err(error)
-			};
-			if buf.is_empty() {
-				break
-			}
-
-			let count = match buf.read_utf8(slice) {
-				Ok(str) => str.len(),
-				Err(Error::Utf8(error)) =>
-					return Err(error.with_offset(valid_len).into()),
-				Err(error) => return Err(error)
-			};
-			valid_len += count;
-			slice = &mut slice[count..];
-		}
+		let slice = buf_read_bytes(
+			self,
+			buf,
+			<[u8]>::is_empty,
+			|mut source, buf|
+				match source.read_utf8(buf) {
+					Ok(str) => {
+						let len = str.len();
+						valid_len += len;
+						Ok(len)
+					}
+					Err(Error::Utf8(error)) =>
+						Err(error.with_offset(valid_len).into()),
+					Err(error) => Err(error)
+				}
+		)?;
 
 		// Safety: valid_len bytes have been validated as UTF-8.
-		Ok(unsafe { core::str::from_utf8_unchecked(&buf[..valid_len]) })
+		Ok(unsafe { core::str::from_utf8_unchecked(slice) })
+	}
+
+	#[cfg(feature = "utf8")]
+	default fn read_utf8_codepoint(&mut self, buf: &mut [u8; 4]) -> Result<char> {
+		let str = match self.buffer() {
+			&[first_byte, ..] => {
+				let char_width = utf8_char_width(first_byte);
+				self.read_utf8(&mut buf[..char_width])?
+			},
+			[] => default_read_utf8_codepoint(self, buf)?
+		};
+		Ok(str.parse().unwrap())
+	}
+
+	#[cfg(feature = "unstable_ascii_char")]
+	default fn read_ascii<'a>(&mut self, buf: &'a mut [u8]) -> Result<&'a [ascii::Char]> {
+		default_read_ascii(self, buf)
 	}
 }
 
@@ -513,6 +631,12 @@ impl<T: BufferAccess> VecSource for T {
 	default fn read_utf8_to_end<'a>(&mut self, buf: &'a mut alloc::string::String) -> Result<&'a str> {
 		impls::buf_read_utf8_to_end(self, buf)
 	}
+}
+
+/// Returns the maximum multiple of `factor` less than or equal to `value`.
+pub(crate) const fn max_multiple_of(value: usize, factor: usize) -> usize {
+	// For powers of 2, this optimizes to a simple AND of the negative factor.
+	value / factor * factor
 }
 
 #[allow(dead_code)]
@@ -601,6 +725,24 @@ fn default_read_exact_bytes<'a>(source: &mut (impl DataSource + ?Sized), buf: &'
 	}
 }
 
+fn default_read_aligned_bytes<'a>(source: &mut (impl DataSource + ?Sized), buf: &'a mut [u8], alignment: usize) -> Result<&'a [u8]> {
+	if alignment == 0 {
+		return Ok(&[])
+	}
+	
+	let len = max_multiple_of(buf.len(), alignment);
+	let mut slice = &mut buf[..len];
+	let mut count = 0;
+	while !slice.is_empty() && source.request(alignment)? {
+		let avail = slice.len().min(max_multiple_of(source.available(), alignment));
+		source.read_exact_bytes(&mut slice[..avail])?;
+		count += avail;
+		slice = &mut slice[avail..];
+	}
+	
+	Ok(&buf[..count])
+}
+
 #[cfg(feature = "unstable_specialization")]
 fn buf_read_exact_bytes<'a>(source: &mut (impl BufferAccess + ?Sized), buf: &'a mut [u8]) -> Result<&'a [u8]> {
 	let len = buf.len();
@@ -627,6 +769,34 @@ fn buf_read_exact_bytes<'a>(source: &mut (impl BufferAccess + ?Sized), buf: &'a 
 	}
 }
 
+#[cfg(feature = "unstable_specialization")]
+fn buf_read_bytes<'a>(
+	source: &mut (impl BufferAccess + ?Sized),
+	buf: &'a mut [u8],
+	mut is_empty: impl FnMut(&[u8]) -> bool,
+	mut slice_read_bytes: impl FnMut(&[u8], &mut [u8]) -> Result<usize>,
+) -> Result<&'a [u8]> {
+	let mut slice = &mut *buf;
+	while !is_empty(slice) {
+		let buf = match source.request(slice.len()) {
+			Ok(_) => source.buffer(),
+			Err(Error::InsufficientBuffer { .. }) => source.fill_buffer()?,
+			Err(error) => return Err(error)
+		};
+		if is_empty(buf) {
+			break
+		}
+
+		let count = slice_read_bytes(buf, slice)?;
+		source.drain_buffer(count);
+		slice = &mut slice[count..];
+	}
+
+	let unfilled = slice.len();
+	let filled = buf.len() - unfilled;
+	Ok(&buf[..filled])
+}
+
 #[cfg(all(feature = "alloc", feature = "utf8"))]
 #[allow(dead_code)]
 pub(crate) fn default_read_utf8<'a>(
@@ -642,6 +812,37 @@ pub(crate) fn default_read_utf8<'a>(
 			source.read_bytes(&mut b[len..])
 				  .map(<[u8]>::len)
 		})
+	}
+}
+
+#[cfg(feature = "utf8")]
+fn default_read_utf8_codepoint<'a>(source: &mut (impl DataSource + ?Sized), buf: &'a mut [u8; 4]) -> Result<&'a str> {
+	let (first_byte, remaining) = buf.split_at_mut(1);
+	source.read_exact_bytes(first_byte)?;
+	let char_width = utf8_char_width(first_byte[0]);
+	source.read_exact_bytes(&mut remaining[..char_width - 1])?;
+	Ok(from_utf8(&buf[..char_width])?)
+}
+
+#[cfg(feature = "unstable_ascii_char")]
+fn default_read_ascii<'a>(source: &mut (impl DataSource + ?Sized), buf: &'a mut [u8]) -> Result<&'a [ascii::Char]> {
+	let bytes = source.read_bytes(buf)?;
+	let idx = count_ascii(bytes);
+	if idx == bytes.len() {
+		// Safety: all bytes have been checked as valid ASCII.
+		Ok(unsafe { bytes.as_ascii_unchecked() })
+	} else {
+		Err(Error::invalid_ascii(bytes[idx], idx, bytes.len()))
+	}
+}
+
+#[cfg(feature = "unstable_ascii_char")]
+pub(crate) fn count_ascii(slice: &[u8]) -> usize {
+	if slice.is_ascii() {
+		slice.len()
+	} else {
+		// Safety: is_ascii indicates there is a non-ASCII character somewhere.
+		unsafe { slice.iter().rposition(|b| !b.is_ascii()).unwrap_unchecked() }
 	}
 }
 
@@ -768,6 +969,37 @@ mod read_exact_test {
 			let mut source = FakeBufSource { source, buffer };
 			let mut target = from_elem(0, source_len);
 			source.read_exact_bytes(&mut target).map(<[u8]>::len).unwrap();
+		}
+	}
+}
+
+#[cfg(all(
+	test,
+	feature = "std",
+	feature = "alloc",
+))]
+mod read_aligned_test {
+	use proptest::arbitrary::any;
+	use proptest::collection::vec;
+	use proptest::{prop_assert_eq, prop_assume, proptest};
+	use crate::DataSource;
+
+	proptest! {
+		#[test]
+		fn read_aligned(source in vec(any::<u8>(), 16..=256), alignment in 1usize..=16) {
+			let buf = &mut [0; 256][..source.len()];
+			let bytes = (&source[..]).read_aligned_bytes(buf, alignment).unwrap();
+			prop_assert_eq!(bytes.len() % alignment, 0);
+		}
+	}
+	
+	proptest! {
+		#[test]
+		fn read_aligned_truncated(buf_size in 0usize..=15, alignment in 1usize..=16) {
+			prop_assume!(buf_size < alignment);
+			let buf = &mut [0; 15][..buf_size];
+			let bytes = (&[0; 16][..]).read_aligned_bytes(buf, alignment).unwrap();
+			prop_assert_eq!(bytes.len(), 0);
 		}
 	}
 }

@@ -1,11 +1,14 @@
-// Copyright 2024 - Strixpyrr
+// Copyright 2025 - Strixpyrr
 // SPDX-License-Identifier: Apache-2.0
 
 use core::ops::Deref;
 #[cfg(feature = "utf8")]
 use simdutf8::compat::from_utf8;
 use crate::{BufferAccess, DataSource, Result};
+#[cfg(feature = "unstable_ascii_char")]
+use crate::Error;
 use crate::markers::source::SourceSize;
+use crate::source::max_multiple_of;
 
 trait ExactSizeBuffer: Deref<Target = [u8]> {
 	fn len(&self) -> usize { (**self).len() }
@@ -17,6 +20,12 @@ trait ExactSizeBuffer: Deref<Target = [u8]> {
 		filled.copy_from_slice(&self[..len]);
 		self.consume(len);
 		filled
+	}
+	
+	fn read_aligned_bytes_infallible<'a>(&mut self, buf: &'a mut [u8], alignment: usize) -> &'a [u8] {
+		if alignment == 0 { return &[] }
+		let len = max_multiple_of(self.len().min(buf.len()), alignment);
+		self.read_bytes_infallible(&mut buf[..len])
 	}
 }
 
@@ -39,6 +48,10 @@ macro_rules! impl_source {
 		
 			fn read_bytes<'a>(&mut self, buf: &'a mut [u8]) -> Result<&'a [u8]> {
 				Ok(self.read_bytes_infallible(buf))
+			}
+			
+			fn read_aligned_bytes<'a>(&mut self, buf: &'a mut [u8], alignment: usize) -> Result<&'a [u8]> {
+				Ok(self.read_aligned_bytes_infallible(buf, alignment))
 			}
 		
 			/// Reads bytes into a slice, returning them as a UTF-8 string if valid.
@@ -64,6 +77,27 @@ macro_rules! impl_source {
 				self.consume(consumed);
 				result
 			}
+
+			/// Reads bytes into a slice, returning them as an ASCII slice if valid.
+			///
+			/// # Errors
+			///
+			/// Returns [`Error::Ascii`] if a non-ASCII byte is found. This
+			/// implementation consumes only valid ASCII. `buf` is left with valid
+			/// ASCII bytes with a length of [`AsciiError::valid_up_to`]. The valid
+			/// slice can be retrieved with [`AsciiError::valid_slice`].
+			#[cfg(feature = "unstable_ascii_char")]
+			fn read_ascii<'a>(&mut self, buf: &'a mut [u8]) -> Result<&'a [core::ascii::Char]> {
+				let len = buf.len().min(self.len());
+				let count = super::count_ascii(&self[..len]);
+				let bytes = self.read_bytes_infallible(&mut buf[..count]);
+				if count == len {
+					// Safety: all bytes have been checked as valid ASCII.
+					Ok(unsafe { bytes.as_ascii_unchecked() })
+				} else {
+					Err(Error::invalid_ascii(self[0], count, count))
+				}
+			}
 		})+
 	};
 }
@@ -72,7 +106,7 @@ impl_source! { &[u8]; #[cfg(feature = "alloc")] alloc::vec::Vec<u8> }
 
 impl ExactSizeBuffer for &[u8] {
 	fn consume(&mut self, count: usize) {
-		*self = &self[..count];
+		*self = &self[count..];
 	}
 }
 

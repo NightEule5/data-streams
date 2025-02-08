@@ -1,4 +1,4 @@
-// Copyright 2024 - Strixpyrr
+// Copyright 2025 - Strixpyrr
 // SPDX-License-Identifier: Apache-2.0
 
 #![cfg(feature = "alloc")]
@@ -8,16 +8,27 @@ use alloc::{collections::VecDeque, vec::Vec};
 use core::mem::MaybeUninit;
 #[cfg(feature = "utf8")]
 use simdutf8::compat::from_utf8;
-#[cfg(feature = "utf8")]
+#[cfg(any(feature = "utf8", feature = "unstable_ascii_char"))]
 use crate::Error;
 use crate::{BufferAccess, DataSink, DataSource, Result};
 use crate::markers::source::SourceSize;
-use crate::source::VecSource;
+use crate::source::{max_multiple_of, VecSource};
+#[cfg(feature = "utf8")]
+use crate::utf8::utf8_char_width;
 
 impl DataSink for Vec<u8> {
 	fn write_bytes(&mut self, buf: &[u8]) -> Result {
 		self.try_reserve(buf.len())?;
 		self.extend_from_slice(buf);
+		Ok(())
+	}
+
+	fn write_utf8_codepoint(&mut self, value: char) -> Result {
+		let start = self.len();
+		let width = value.len_utf8();
+		self.try_reserve(width)?;
+		self.resize(start + width, 0);
+		value.encode_utf8(&mut self[start..]);
 		Ok(())
 	}
 
@@ -53,6 +64,12 @@ impl DataSource for VecDeque<u8> {
 		count += b.read_bytes(slice)?.len();
 		self.drain_buffer(count);
 		Ok(&buf[..count])
+	}
+
+	fn read_aligned_bytes<'a>(&mut self, buf: &'a mut [u8], alignment: usize) -> Result<&'a [u8]> {
+		if alignment == 0 { return Ok(&[]) }
+		let len = max_multiple_of(self.len().min(buf.len()), alignment);
+		self.read_bytes(&mut buf[..len])
 	}
 
 	/// Reads bytes into a slice, returning them as a UTF-8 string if valid.
@@ -133,6 +150,48 @@ impl DataSource for VecDeque<u8> {
 					Err(_) => unreachable!() // <[u8]>::read_utf8 only ever returns Error::Utf8.
 				}
 			}
+		}
+	}
+	/// Reads bytes into a slice, returning them as an ASCII slice if valid.
+	///
+	/// # Errors
+	///
+	/// Returns [`Error::Ascii`] if a non-ASCII byte is found. This implementation
+	/// consumes only valid ASCII. `buf` is left with valid ASCII bytes with a
+	/// length of [`AsciiError::valid_up_to`]. The valid slice can be retrieved
+	/// with [`AsciiError::valid_slice`].
+	#[cfg(feature = "unstable_ascii_char")]
+	fn read_ascii<'a>(&mut self, mut buf: &'a mut [u8]) -> Result<&'a [core::ascii::Char]> {
+		use crate::source::count_ascii;
+
+		let buf_len = self.len().min(buf.len());
+		buf = &mut buf[..buf_len];
+		let (mut a, mut b) = self.as_slices();
+		if buf.len() >= a.len() {
+			b = &b[..buf.len() - a.len()];
+		} else {
+			a = &a[..buf.len()];
+			b = &[];
+		}
+		
+		let a_count = count_ascii(a);
+		if a_count == a.len() {
+			buf.copy_from_slice(a);
+			let b_count = count_ascii(b);
+			buf[a_count..][..b_count].copy_from_slice(&b[..b_count]);
+			
+			let result = if b_count == b.len() {
+				// Safety: all data is valid ASCII.
+				Ok(unsafe { buf.as_ascii_unchecked() })
+			} else {
+				Err(Error::invalid_ascii(b[b_count], b_count, b_count))
+			};
+			self.drain_buffer(a_count + b_count);
+			result
+		} else {
+			buf[..a_count].copy_from_slice(&a[..a_count]);
+			self.drain_buffer(a_count);
+			Err(Error::invalid_ascii(buf[a_count], a_count, a_count))
 		}
 	}
 }
@@ -222,34 +281,44 @@ impl DataSink for VecDeque<u8> {
 
 #[cfg(feature = "utf8")]
 impl DataSink for alloc::string::String {
+	/// Writes all valid UTF-8 bytes from `buf`.
+	///
+	/// # Errors
+	///
+	/// Returns [`Error::Utf8`] if `buf` contains invalid UTF-8. In this case, any
+	/// valid UTF-8 is written. [`Utf8Error::valid_up_to`] in this error returns
+	/// the number of valid bytes written to the string.
+	///
+	/// [`Error::Allocation`] is returned when capacity cannot be allocated.
 	fn write_bytes(&mut self, buf: &[u8]) -> Result {
-		self.push_str(from_utf8(buf)?);
+		let (valid, result) = match from_utf8(buf).map_err(crate::Utf8Error::from) {
+			Ok(str) => (str, Ok(())),
+			Err(err) =>
+				// Safety: this is safe because we use the same slice passed to the
+				// validator. 
+				(unsafe { err.valid_slice_unchecked(buf) }, Err(err.into()))
+		};
+		self.write_utf8(valid)?;
+		result
+	}
+	/// Writes a UTF-8 string.
+	///
+	/// # Errors
+	///
+	/// [`Error::Allocation`] is returned when capacity cannot be allocated.
+	fn write_utf8(&mut self, value: &str) -> Result {
+		self.try_reserve(value.len())?;
+		self.push_str(value);
 		Ok(())
 	}
-}
-
-/// A reimplementation of the unstable [`core::str::utf8_char_width`] function.
-#[cfg(feature = "utf8")]
-fn utf8_char_width(byte: u8) -> usize {
-	const UTF8_CHAR_WIDTH: &[u8; 256] = &[
-		// 1  2  3  4  5  6  7  8  9  A  B  C  D  E  F
-		1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // 0
-		1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // 1
-		1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // 2
-		1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // 3
-		1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // 4
-		1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // 5
-		1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // 6
-		1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // 7
-		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 8
-		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 9
-		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // A
-		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // B
-		0, 0, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, // C
-		2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, // D
-		3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, // E
-		4, 4, 4, 4, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // F
-	];
-	
-	UTF8_CHAR_WIDTH[byte as usize] as usize
+	/// Writes a single UTF-8 codepoint.
+	/// 
+	/// # Errors
+	/// 
+	/// [`Error::Allocation`] is returned when capacity cannot be allocated.
+	fn write_utf8_codepoint(&mut self, value: char) -> Result {
+		self.try_reserve(value.len_utf8())?;
+		self.push(value);
+		Ok(())
+	}
 }

@@ -1,6 +1,6 @@
 [package]
 name = "data-streams"
-version = "1.1.0"
+version = "2.0.0-pre.3"
 edition = "2021"
 authors = ["NightEule5 <24661563+NightEule5@users.noreply.github.com>"]
 description = "Extension traits for reading and writing data with streams."
@@ -14,10 +14,16 @@ default = ["std", "alloc"]
 std = ["num-traits/std", "simdutf8/std"]
 alloc = []
 utf8 = ["simdutf8"]
-unstable = ["unstable_specialization", "unstable_borrowed_buf", "unstable_uninit_slice"]
+unstable = [
+	"unstable_specialization",
+	"unstable_borrowed_buf",
+	"unstable_uninit_slice",
+	"unstable_ascii_char",
+]
 unstable_specialization = []
 unstable_borrowed_buf = []
 unstable_uninit_slice = []
+unstable_ascii_char = []
 
 [dependencies]
 bytemuck = "1.16.1"

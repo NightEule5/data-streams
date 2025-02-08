@@ -3,6 +3,8 @@
 
 #[cfg(feature = "alloc")]
 use alloc::collections::TryReserveError;
+#[cfg(feature = "unstable_ascii_char")]
+use core::ascii;
 #[cfg(feature = "utf8")]
 pub use simdutf8::compat::Utf8Error as SimdUtf8Error;
 use core::fmt::{Display, Formatter, Result as FmtResult};
@@ -17,8 +19,8 @@ pub enum Error {
 	#[cfg(feature = "std")]
 	Io(std::io::Error),
 	/// An invalid ASCII byte was encountered.
-	#[cfg(feature = "alloc")]
-	Ascii(u8),
+	#[cfg(feature = "unstable_ascii_char")]
+	Ascii(AsciiError),
 	/// Invalid UTF-8 bytes were encountered.
 	#[cfg(feature = "utf8")]
 	Utf8(Utf8Error),
@@ -48,17 +50,24 @@ pub enum Error {
 }
 
 impl Error {
-	/// Create an overflow error.
+	/// Creates an ASCII error.
+	#[inline]
+	#[cfg(feature = "unstable_ascii_char")]
+	pub const fn invalid_ascii(invalid_byte: u8, valid_up_to: usize, consumed_count: usize) -> Self {
+		assert!(consumed_count >= valid_up_to);
+		Self::Ascii(AsciiError { invalid_byte, valid_up_to, consumed_count })
+	}
+	/// Creates an overflow error.
 	#[inline]
 	pub const fn overflow(remaining: usize) -> Self {
 		Self::Overflow { remaining }
 	}
-	/// Create an end-of-stream error.
+	/// Creates an end-of-stream error.
 	#[inline]
 	pub const fn end(required_count: usize) -> Self {
 		Self::End { required_count }
 	}
-	/// Create an insufficient buffer capacity error.
+	/// Creates an insufficient buffer capacity error.
 	#[inline]
 	pub const fn insufficient_buffer(spare_capacity: usize, required_count: usize) -> Self {
 		Self::InsufficientBuffer { spare_capacity, required_count }
@@ -70,7 +79,7 @@ impl std::error::Error for Error {
 	fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
 		match self {
 			Self::Io(error) => Some(error),
-			#[cfg(feature = "alloc")]
+			#[cfg(feature = "unstable_ascii_char")]
 			Self::Ascii(_) => None,
 			#[cfg(feature = "utf8")]
 			Self::Utf8(error) => error.source(),
@@ -89,8 +98,8 @@ impl Display for Error {
 		match self {
 			#[cfg(feature = "std")]
 			Self::Io(error) => Display::fmt(error, f),
-			#[cfg(feature = "alloc")]
-			Self::Ascii(byte) => write!(f, "cannot read non-ASCII byte {byte:#X} into a UTF-8 string"),
+			#[cfg(feature = "unstable_ascii_char")]
+			Self::Ascii(error) => Display::fmt(error, f),
 			#[cfg(feature = "utf8")]
 			Self::Utf8(error) => Display::fmt(error, f),
 			#[cfg(feature = "alloc")]
@@ -126,6 +135,14 @@ impl From<Utf8Error> for Error {
 	#[inline]
 	fn from(value: Utf8Error) -> Self {
 		Self::Utf8(value)
+	}
+}
+
+#[cfg(feature = "unstable_ascii_char")]
+impl From<AsciiError> for Error {
+	#[inline]
+	fn from(value: AsciiError) -> Self {
+		Self::Ascii(value)
 	}
 }
 
@@ -198,6 +215,20 @@ impl Utf8Error {
 			None => Utf8ErrorKind::IncompleteChar
 		}
 	}
+	/// Returns the validated part of a slice as UTF-8, assuming it has identical
+	/// contents from the slice which produced the error.
+	///
+	/// # Safety
+	///
+	/// The slice length and contents must be identical to the slice which produced
+	/// the error. Passing a shorter and/or unvalidated slice may cause UB, because
+	/// it may index out-of-bounds or invalidate the result.
+	///
+	/// For a safe alternative, use [`valid_slice`](Self::valid_slice).
+	#[must_use]
+	pub unsafe fn valid_slice_unchecked<'a>(&self, bytes: &'a [u8]) -> &'a str {
+		core::str::from_utf8_unchecked(bytes.get_unchecked(..self.valid_up_to()))
+	}
 	/// Splits a slice at the valid UTF-8 index, returning the first slice as a
 	/// string.
 	/// 
@@ -264,5 +295,112 @@ impl From<SimdUtf8Error> for Utf8Error {
 	#[inline]
 	fn from(inner: SimdUtf8Error) -> Self {
 		Self { offset: 0, inner }
+	}
+}
+
+#[cfg(feature = "unstable_ascii_char")]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub struct AsciiError {
+	/// The invalid byte, in range `128..256`.
+	pub invalid_byte: u8,
+	/// The index of the invalid byte to which the input was valid ASCII.
+	pub valid_up_to: usize,
+	/// The number of bytes consumed from the source, including any unchecked bytes
+	/// after the invalid byte.
+	pub consumed_count: usize,
+}
+
+#[cfg(feature = "unstable_ascii_char")]
+impl AsciiError {
+	/// Returns the invalid byte.
+	#[inline]
+	#[must_use]
+	pub const fn invalid_byte(&self) -> u8 { self.invalid_byte }
+	/// Returns the index in the input to which valid ASCII was verified.
+	#[inline]
+	#[must_use]
+	pub const fn valid_up_to(&self) -> usize { self.valid_up_to }
+	/// Returns the total number of bytes consumed from the source, including any
+	/// unchecked bytes after the invalid byte.
+	#[inline]
+	#[must_use]
+	pub const fn consumed_count(&self) -> usize { self.consumed_count }
+	/// Returns the number of bytes consumed from the source after the invalid byte
+	/// which haven't been checked.
+	#[inline]
+	#[must_use]
+	pub const fn unchecked_count(&self) -> usize { self.consumed_count.saturating_sub(1 + self.valid_up_to) }
+	/// Returns the validated part of a slice as ASCII.
+	/// 
+	/// # Panics
+	/// 
+	/// Panics if the slice does not contain valid bytes up to the valid length in
+	/// the error.
+	#[must_use]
+	pub fn valid_slice<'a>(&self, bytes: &'a [u8]) -> &'a [ascii::Char] {
+		assert!(bytes.len() >= self.valid_up_to);
+		assert!(bytes[..self.valid_up_to].is_ascii());
+		unsafe {
+			// Safety: the invariants were checked by the above assertions.
+			self.valid_slice_unchecked(bytes)
+		}
+	}
+	/// Returns the validated part of a slice as ASCII, assuming it has identical
+	/// contents from the slice which produced the error.
+	/// 
+	/// # Safety
+	/// 
+	/// The slice length and contents must be identical to the slice which produced
+	/// the error. Passing a shorter and/or unvalidated slice may cause UB, because
+	/// it may index out-of-bounds or invalidate the result.
+	/// 
+	/// For a safe alternative, use [`valid_slice`](Self::valid_slice).
+	#[must_use]
+	pub unsafe fn valid_slice_unchecked<'a>(&self, bytes: &'a [u8]) -> &'a [ascii::Char] {
+		bytes.get_unchecked(..self.valid_up_to).as_ascii_unchecked()
+	}
+	/// Splits a slice at the valid ASCII index, returning the first slice as an
+	/// [`ascii::Char`] slice.
+	/// 
+	/// # Panics
+	/// 
+	/// Panics if the slice does not contain valid bytes up to the valid length in
+	/// the error, or if shorter than the consumed count.
+	#[must_use]
+	pub fn split_valid<'a>(&self, bytes: &'a [u8]) -> (&'a [ascii::Char], &'a [u8]) {
+		assert!(self.consumed_count >= self.valid_up_to);
+		assert!(bytes.len() >= self.consumed_count);
+		assert!(bytes[..self.valid_up_to].is_ascii());
+		unsafe {
+			// Safety: the invariants were checked by the above assertions.
+			self.split_valid_unchecked(bytes)
+		}
+	}
+	/// Splits a slice at the valid ASCII index, returning the first slice as an
+	/// [`ascii::Char`] slice. Assumes the slice has identical contents from the
+	/// slice which produced the error.
+	///
+	/// # Safety
+	///
+	/// The slice length and contents must be identical to the slice which produced
+	/// the error. Passing a shorter and/or unvalidated slice may cause UB, because
+	/// it may index out-of-bounds or invalidate the result.
+	/// 
+	/// For a safe alternative, use [`split_valid`](Self::split_valid).
+	#[must_use]
+	pub unsafe fn split_valid_unchecked<'a>(&self, bytes: &'a [u8]) -> (&'a [ascii::Char], &'a [u8]) {
+		(self.valid_slice_unchecked(bytes),
+		 bytes.get_unchecked(self.valid_up_to..self.consumed_count))
+	}
+}
+
+#[cfg(all(feature = "std", feature = "unstable_ascii_char"))]
+impl std::error::Error for AsciiError { }
+
+#[cfg(feature = "unstable_ascii_char")]
+impl Display for AsciiError {
+	fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+		let Self { invalid_byte, valid_up_to, .. } = self;
+		write!(f, "non-ASCII byte {invalid_byte:#X} at index {valid_up_to}")
 	}
 }

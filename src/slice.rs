@@ -1,11 +1,25 @@
 // Copyright 2024 - Strixpyrr
 // SPDX-License-Identifier: Apache-2.0
 
+use core::mem::take;
 use crate::{DataSink, Error, Result};
 
 impl DataSink for &mut [u8] {
 	fn write_bytes(&mut self, buf: &[u8]) -> Result {
 		mut_slice_write_bytes(self, buf, <[u8]>::copy_from_slice)
+	}
+
+	fn write_utf8_codepoint(&mut self, value: char) -> Result {
+		if let Some((buf, remaining)) = take(self).split_at_mut_checked(value.len_utf8()) {
+			// Encode directly into the sink slice.
+			value.encode_utf8(buf);
+			*self = remaining;
+			Ok(())
+		} else {
+			// Encode into an intermediate buffer, then write until overflow.
+			let mut buf = [0; 4];
+			self.write_utf8(value.encode_utf8(&mut buf))
+		}
 	}
 
 	fn write_u8(&mut self, value: u8) -> Result {
@@ -24,7 +38,7 @@ use core::mem::MaybeUninit;
 #[cfg(feature = "unstable_uninit_slice")]
 impl DataSink for &mut [MaybeUninit<u8>] {
 	fn write_bytes(&mut self, buf: &[u8]) -> Result {
-		mut_slice_write_bytes(self, buf, |t, s| { MaybeUninit::copy_from_slice(t, s); })
+		mut_slice_write_bytes(self, buf, |t, s| { t.write_copy_of_slice(s); })
 	}
 
 	fn write_u8(&mut self, value: u8) -> Result {
@@ -35,8 +49,6 @@ impl DataSink for &mut [MaybeUninit<u8>] {
 		self.write_u8(value as u8)
 	}
 }
-
-use core::mem::take;
 
 #[allow(clippy::mut_mut)]
 fn mut_slice_write_bytes<T>(

@@ -77,6 +77,7 @@
 //!   - `unstable_uninit_slice`: Provides a [`DataSink`] impl for `&mut [MaybeUninit<u8>]`.
 
 #![cfg_attr(not(feature = "std"), no_std)]
+#![cfg_attr(feature = "unstable_ascii_char", feature(ascii_char))]
 #![cfg_attr(feature = "unstable_specialization", feature(specialization))]
 #![cfg_attr(feature = "unstable_borrowed_buf", feature(core_io_borrowed_buf))]
 #![cfg_attr(feature = "unstable_uninit_slice", feature(maybe_uninit_write_slice))]
@@ -93,6 +94,7 @@
 
 #[cfg(feature = "alloc")]
 extern crate alloc;
+extern crate core;
 
 mod error;
 mod source;
@@ -101,6 +103,7 @@ mod slice;
 mod vec;
 mod core_io;
 mod std_io;
+mod utf8;
 mod wrappers;
 
 pub mod markers {
@@ -110,6 +113,8 @@ pub mod markers {
 }
 
 pub use error::Error;
+#[cfg(feature = "unstable_ascii_char")]
+pub use error::AsciiError;
 #[cfg(feature = "utf8")]
 pub use error::{Utf8Error, Utf8ErrorKind, SimdUtf8Error};
 pub use sink::{DataSink, GenericDataSink};
