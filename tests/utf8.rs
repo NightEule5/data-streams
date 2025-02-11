@@ -1,7 +1,7 @@
 // Copyright 2024 - Strixpyrr
 // SPDX-License-Identifier: Apache-2.0
 
-#![cfg(feature = "default")]
+#![cfg(all(feature = "std", feature = "alloc", feature = "utf8"))]
 
 use std::collections::VecDeque;
 use std::fmt::{Debug, Formatter};

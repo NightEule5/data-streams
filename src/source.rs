@@ -21,6 +21,15 @@ pub trait DataSource {
 	/// Returns the number of bytes available for reading. This does not necessarily
 	/// mean more data isn't available, just that *at least* this count is may be
 	/// read.
+	/// 
+	/// # Example
+	/// 
+	/// ```
+	/// use data_streams::DataSource;
+	/// 
+	/// let buf: &[u8] = b"Hello!";
+	/// assert_eq!(buf.available(), 6);
+	/// ```
 	fn available(&self) -> usize;
 	/// Reads at most `count` bytes into an internal buffer, returning whether
 	/// enough bytes are available. To return an end-of-stream error, use [`require`]
@@ -35,6 +44,18 @@ pub trait DataSource {
 	/// is returned and both the internal buffer and underlying streams remain unchanged.
 	///
 	/// [`require`]: Self::require
+	/// 
+	/// # Example
+	/// 
+	/// ```
+	/// # use data_streams::Error;
+	/// use data_streams::DataSource;
+	///
+	/// let mut buf: &[u8] = b"Hello!";
+	/// assert_eq!(buf.request(3)?, true);
+	/// assert_eq!(buf.request(50)?, false);
+	/// # Ok::<_, Error>(())
+	/// ```
 	fn request(&mut self, count: usize) -> Result<bool>;
 	/// Reads at least `count` bytes into an internal buffer, returning `Ok` if
 	/// successful, or an end-of-stream error if not. For a softer version that
@@ -47,6 +68,16 @@ pub trait DataSource {
 	/// is returned instead.
 	///
 	/// [`request`]: Self::request
+	/// 
+	/// # Example
+	/// 
+	/// ```
+	/// use data_streams::{DataSource, Error};
+	/// 
+	/// let mut buf: &[u8] = b"Hello!";
+	/// assert!(buf.require(3).is_ok());
+	/// assert!(matches!(buf.require(50), Err(Error::End { .. })));
+	/// ```
 	fn require(&mut self, count: usize) -> Result {
 		if self.request(count)? {
 			Ok(())
@@ -61,6 +92,18 @@ pub trait DataSource {
 	/// # Errors
 	///
 	/// Returns any IO errors encountered.
+	/// 
+	/// # Example
+	/// 
+	/// ```
+	/// # use data_streams::Error;
+	/// use data_streams::DataSource;
+	/// 
+	/// let mut buf: &[u8] = b"Hello!";
+	/// assert_eq!(buf.skip(3)?, 3);
+	/// assert_eq!(buf.skip(8)?, 3);
+	/// # Ok::<_, Error>(())
+	/// ```
 	fn skip(&mut self, count: usize) -> Result<usize>;
 	/// Reads bytes into a slice, returning the bytes read. This method is greedy;
 	/// it consumes as many bytes as it can, until `buf` is filled or no more bytes
@@ -69,6 +112,19 @@ pub trait DataSource {
 	/// # Errors
 	///
 	/// Returns any IO errors encountered.
+	/// 
+	/// # Example
+	/// 
+	/// ```
+	/// # use data_streams::Error;
+	/// use data_streams::DataSource;
+	/// 
+	/// let mut input: &[u8] = b"Hello!";
+	/// let buf: &mut [u8] = &mut [0; 5];
+	/// assert_eq!(input.read_bytes(&mut buf[..3])?, b"Hel");
+	/// assert_eq!(input.read_bytes(buf)?, b"lo!");
+	/// # Ok::<_, Error>(())
+	/// ```
 	fn read_bytes<'a>(&mut self, buf: &'a mut [u8]) -> Result<&'a [u8]>;
 	/// Reads the exact length of bytes into a slice, returning the bytes read if
 	/// successful, or an end-of-stream error if not. Bytes are not consumed if an
@@ -79,6 +135,18 @@ pub trait DataSource {
 	/// Returns [`Error::End`] with the slice length if the exact number of bytes
 	/// cannot be read. The bytes that were read remain in the buffer, but have
 	/// been consumed from the source.
+	/// 
+	/// # Example
+	/// 
+	/// ```
+	/// use data_streams::{DataSource, Error};
+	/// 
+	/// let mut input: &[u8] = b"Hello!";
+	/// let buf: &mut [u8] = &mut [0; 5];
+	/// assert_eq!(input.read_exact_bytes(&mut buf[..3])?, b"Hel");
+	/// assert!(matches!(input.read_exact_bytes(buf), Err(Error::End { .. })));
+	/// # Ok::<_, Error>(())
+	/// ```
 	fn read_exact_bytes<'a>(&mut self, buf: &'a mut [u8]) -> Result<&'a [u8]> {
 		default_read_exact_bytes(self, buf)
 	}
@@ -91,6 +159,19 @@ pub trait DataSource {
 	/// # Errors
 	/// 
 	/// Returns any IO errors encountered.
+	/// 
+	/// # Example
+	/// 
+	/// ```
+	/// # use data_streams::Error;
+	/// use data_streams::DataSource;
+	/// 
+	/// let mut input: &[u8] = b"Hello?!";
+	/// let buf: &mut [u8] = &mut [0; 10];
+	/// assert_eq!(input.read_aligned_bytes(buf, 2)?, b"Hello?");
+	/// assert_eq!(input.read_aligned_bytes(buf, 2)?, b"");
+	/// # Ok::<_, Error>(())
+	/// ```
 	fn read_aligned_bytes<'a>(&mut self, buf: &'a mut [u8], alignment: usize) -> Result<&'a [u8]> {
 		default_read_aligned_bytes(self, buf, alignment)
 	}
@@ -99,6 +180,17 @@ pub trait DataSource {
 	/// # Errors
 	///
 	/// Returns [`Error::End`] with the array length if [`N`] bytes cannot be read.
+	/// 
+	/// # Example
+	/// 
+	/// ```
+	/// # use data_streams::Error;
+	/// use data_streams::DataSource;
+	/// 
+	/// let mut input: &[u8] = b"Hello!";
+	/// assert_eq!(input.read_array::<3>()?, *b"Hel");
+	/// # Ok::<_, Error>(())
+	/// ```
 	fn read_array<const N: usize>(&mut self) -> Result<[u8; N]>
 	where
 		Self: Sized
@@ -112,6 +204,20 @@ pub trait DataSource {
 	///
 	/// Returns [`Error::End`] if the stream ends before exactly `1` byte can be
 	/// read.
+	/// 
+	/// # Example
+	/// 
+	/// ```
+	/// use data_streams::DataSource;
+	/// 
+	/// let mut buf: &[u8] = &[2, 3, 5, 7, 11];
+	/// 
+	/// let mut sum = 0;
+	/// while let Ok(byte) = buf.read_u8() {
+ 	///     sum += byte;
+	/// }
+	/// assert_eq!(sum, 28);
+	/// ```
 	fn read_u8(&mut self) -> Result<u8> { self.read_data() }
 	/// Reads an [`i8`].
 	///
@@ -119,6 +225,18 @@ pub trait DataSource {
 	///
 	/// Returns [`Error::End`] if the stream ends before exactly `1` byte can be
 	/// read.
+	/// 
+	/// ```
+	/// use data_streams::DataSource;
+	///
+	/// let mut buf: &[u8] = &[2, (-3i8) as u8, 5, (-7i8) as u8, 11];
+	/// 
+	/// let mut sum = 0;
+	/// while let Ok(byte) = buf.read_i8() {
+	///     sum += byte;
+	/// }
+	/// assert_eq!(sum, 8);
+	/// ```
 	fn read_i8(&mut self) -> Result<i8> { self.read_data() }
 	/// Reads a big-endian [`u16`].
 	///
@@ -126,6 +244,18 @@ pub trait DataSource {
 	///
 	/// Returns [`Error::End`] if the stream ends before exactly `2` bytes can be
 	/// read.
+	/// 
+	/// # Example
+	/// 
+	/// ```
+	/// # use data_streams::Error;
+	/// use data_streams::DataSource;
+	/// 
+	/// let mut buf: &[u8] = &[0x12, 0x34, 0x56, 0x78];
+	/// assert_eq!(buf.read_u16()?, 0x1234);
+	/// assert_eq!(buf.read_u16()?, 0x5678);
+	/// # Ok::<_, Error>(())
+	/// ```
 	fn read_u16(&mut self) -> Result<u16> { self.read_int() }
 	/// Reads a big-endian [`i16`].
 	///
@@ -133,6 +263,18 @@ pub trait DataSource {
 	///
 	/// Returns [`Error::End`] if the stream ends before exactly `2` bytes can be
 	/// read.
+	///
+	/// # Example
+	///
+	/// ```
+	/// # use data_streams::Error;
+	/// use data_streams::DataSource;
+	///
+	/// let mut buf: &[u8] = &[0x12, 0x34, 0x56, 0x78];
+	/// assert_eq!(buf.read_i16()?, 0x1234);
+	/// assert_eq!(buf.read_i16()?, 0x5678);
+	/// # Ok::<_, Error>(())
+	/// ```
 	fn read_i16(&mut self) -> Result<i16> { self.read_int() }
 	/// Reads a little-endian [`u16`].
 	///
@@ -140,6 +282,18 @@ pub trait DataSource {
 	///
 	/// Returns [`Error::End`] if the stream ends before exactly `2` bytes can be
 	/// read.
+	///
+	/// # Example
+	///
+	/// ```
+	/// # use data_streams::Error;
+	/// use data_streams::DataSource;
+	///
+	/// let mut buf: &[u8] = &[0x12, 0x34, 0x56, 0x78];
+	/// assert_eq!(buf.read_u16_le()?, 0x3412);
+	/// assert_eq!(buf.read_u16_le()?, 0x7856);
+	/// # Ok::<_, Error>(())
+	/// ```
 	fn read_u16_le(&mut self) -> Result<u16> { self.read_int_le() }
 	/// Reads a little-endian [`i16`].
 	///
@@ -147,6 +301,18 @@ pub trait DataSource {
 	///
 	/// Returns [`Error::End`] if the stream ends before exactly `2` bytes can be
 	/// read.
+	///
+	/// # Example
+	///
+	/// ```
+	/// # use data_streams::Error;
+	/// use data_streams::DataSource;
+	///
+	/// let mut buf: &[u8] = &[0x12, 0x34, 0x56, 0x78];
+	/// assert_eq!(buf.read_i16_le()?, 0x3412);
+	/// assert_eq!(buf.read_i16_le()?, 0x7856);
+	/// # Ok::<_, Error>(())
+	/// ```
 	fn read_i16_le(&mut self) -> Result<i16> { self.read_int_le() }
 	/// Reads a big-endian [`u32`].
 	///
@@ -154,6 +320,17 @@ pub trait DataSource {
 	///
 	/// Returns [`Error::End`] if the stream ends before exactly `4` bytes can be
 	/// read.
+	///
+	/// # Example
+	///
+	/// ```
+	/// # use data_streams::Error;
+	/// use data_streams::DataSource;
+	///
+	/// let mut buf: &[u8] = &[0x12, 0x34, 0x56, 0x78];
+	/// assert_eq!(buf.read_u32()?, 0x12345678);
+	/// # Ok::<_, Error>(())
+	/// ```
 	fn read_u32(&mut self) -> Result<u32> { self.read_int() }
 	/// Reads a big-endian [`i32`].
 	///
@@ -161,6 +338,17 @@ pub trait DataSource {
 	///
 	/// Returns [`Error::End`] if the stream ends before exactly `4` bytes can be
 	/// read.
+	///
+	/// # Example
+	///
+	/// ```
+	/// # use data_streams::Error;
+	/// use data_streams::DataSource;
+	///
+	/// let mut buf: &[u8] = &[0x12, 0x34, 0x56, 0x78];
+	/// assert_eq!(buf.read_i32()?, 0x12345678);
+	/// # Ok::<_, Error>(())
+	/// ```
 	fn read_i32(&mut self) -> Result<i32> { self.read_int() }
 	/// Reads a little-endian [`u32`].
 	///
@@ -168,6 +356,17 @@ pub trait DataSource {
 	///
 	/// Returns [`Error::End`] if the stream ends before exactly `4` bytes can be
 	/// read.
+	///
+	/// # Example
+	///
+	/// ```
+	/// # use data_streams::Error;
+	/// use data_streams::DataSource;
+	///
+	/// let mut buf: &[u8] = &[0x12, 0x34, 0x56, 0x78];
+	/// assert_eq!(buf.read_u32_le()?, 0x78563412);
+	/// # Ok::<_, Error>(())
+	/// ```
 	fn read_u32_le(&mut self) -> Result<u32> { self.read_int_le() }
 	/// Reads a little-endian [`i32`].
 	///
@@ -175,6 +374,17 @@ pub trait DataSource {
 	///
 	/// Returns [`Error::End`] if the stream ends before exactly `4` bytes can be
 	/// read.
+	///
+	/// # Example
+	///
+	/// ```
+	/// # use data_streams::Error;
+	/// use data_streams::DataSource;
+	///
+	/// let mut buf: &[u8] = &[0x12, 0x34, 0x56, 0x78];
+	/// assert_eq!(buf.read_i32_le()?, 0x78563412);
+	/// # Ok::<_, Error>(())
+	/// ```
 	fn read_i32_le(&mut self) -> Result<i32> { self.read_int_le() }
 	/// Reads a big-endian [`u64`].
 	///
@@ -182,6 +392,20 @@ pub trait DataSource {
 	///
 	/// Returns [`Error::End`] if the stream ends before exactly `8` bytes can be
 	/// read.
+	///
+	/// # Example
+	///
+	/// ```
+	/// # use data_streams::Error;
+	/// use data_streams::DataSource;
+	///
+	/// let mut buf: &[u8] = &[
+	///     0x12, 0x34, 0x56, 0x78,
+	///     0x9A, 0xBC, 0xDE, 0xF0
+	/// ];
+	/// assert_eq!(buf.read_u64()?, 0x1234_5678_9ABC_DEF0);
+	/// # Ok::<_, Error>(())
+	/// ```
 	fn read_u64(&mut self) -> Result<u64> { self.read_int() }
 	/// Reads a big-endian [`i64`].
 	///
@@ -189,6 +413,20 @@ pub trait DataSource {
 	///
 	/// Returns [`Error::End`] if the stream ends before exactly `8` bytes can be
 	/// read.
+	///
+	/// # Example
+	///
+	/// ```
+	/// # use data_streams::Error;
+	/// use data_streams::DataSource;
+	///
+	/// let mut buf: &[u8] = &[
+	///     0x12, 0x34, 0x56, 0x78,
+	///     0x9A, 0xBC, 0xDE, 0xF0
+	/// ];
+	/// assert_eq!(buf.read_i64()?, 0x1234_5678_9ABC_DEF0);
+	/// # Ok::<_, Error>(())
+	/// ```
 	fn read_i64(&mut self) -> Result<i64> { self.read_int() }
 	/// Reads a little-endian [`u64`].
 	///
@@ -196,6 +434,20 @@ pub trait DataSource {
 	///
 	/// Returns [`Error::End`] if the stream ends before exactly `8` bytes can be
 	/// read.
+	///
+	/// # Example
+	///
+	/// ```
+	/// # use data_streams::Error;
+	/// use data_streams::DataSource;
+	///
+	/// let mut buf: &[u8] = &[
+	///     0x12, 0x34, 0x56, 0x78,
+	///     0x9A, 0xBC, 0xDE, 0xF0
+	/// ];
+	/// assert_eq!(buf.read_u64_le()?, 0xF0DE_BC9A_7856_3412);
+	/// # Ok::<_, Error>(())
+	/// ```
 	fn read_u64_le(&mut self) -> Result<u64> { self.read_int_le() }
 	/// Reads a little-endian [`i64`].
 	///
@@ -203,6 +455,20 @@ pub trait DataSource {
 	///
 	/// Returns [`Error::End`] if the stream ends before exactly `8` bytes can be
 	/// read.
+	///
+	/// # Example
+	///
+	/// ```
+	/// # use data_streams::Error;
+	/// use data_streams::DataSource;
+	///
+	/// let mut buf: &[u8] = &[
+	///     0x12, 0x34, 0x56, 0x78,
+	///     0x9A, 0xBC, 0xDE, 0xF0
+	/// ];
+	/// assert_eq!(buf.read_i64_le()?, 0xF0DE_BC9A_7856_3412u64 as i64);
+	/// # Ok::<_, Error>(())
+	/// ```
 	fn read_i64_le(&mut self) -> Result<i64> { self.read_int_le() }
 	/// Reads a big-endian [`u128`].
 	///
@@ -210,6 +476,22 @@ pub trait DataSource {
 	///
 	/// Returns [`Error::End`] if the stream ends before exactly `16` bytes can be
 	/// read.
+	///
+	/// # Example
+	///
+	/// ```
+	/// # use data_streams::Error;
+	/// use data_streams::DataSource;
+	///
+	/// let mut buf: &[u8] = &[
+	///     0x12, 0x34, 0x56, 0x78,
+	///     0x9A, 0xBC, 0xDE, 0xF0,
+	///     0x0F, 0xED, 0xCB, 0xA9,
+	///     0x87, 0x65, 0x43, 0x21
+	/// ];
+	/// assert_eq!(buf.read_u128()?, 0x1234_5678_9ABC_DEF0_0FED_CBA9_8765_4321);
+	/// # Ok::<_, Error>(())
+	/// ```
 	fn read_u128(&mut self) -> Result<u128> { self.read_int() }
 	/// Reads a big-endian [`i128`].
 	///
@@ -217,6 +499,22 @@ pub trait DataSource {
 	///
 	/// Returns [`Error::End`] if the stream ends before exactly `16` bytes can be
 	/// read.
+	///
+	/// # Example
+	///
+	/// ```
+	/// # use data_streams::Error;
+	/// use data_streams::DataSource;
+	///
+	/// let mut buf: &[u8] = &[
+	///     0x12, 0x34, 0x56, 0x78,
+	///     0x9A, 0xBC, 0xDE, 0xF0,
+	///     0x0F, 0xED, 0xCB, 0xA9,
+	///     0x87, 0x65, 0x43, 0x21
+	/// ];
+	/// assert_eq!(buf.read_i128()?, 0x1234_5678_9ABC_DEF0_0FED_CBA9_8765_4321);
+	/// # Ok::<_, Error>(())
+	/// ```
 	fn read_i128(&mut self) -> Result<i128> { self.read_int() }
 	/// Reads a little-endian [`u128`].
 	///
@@ -224,6 +522,22 @@ pub trait DataSource {
 	///
 	/// Returns [`Error::End`] if the stream ends before exactly `16` bytes can be
 	/// read.
+	///
+	/// # Example
+	///
+	/// ```
+	/// # use data_streams::Error;
+	/// use data_streams::DataSource;
+	///
+	/// let mut buf: &[u8] = &[
+	///     0x12, 0x34, 0x56, 0x78,
+	///     0x9A, 0xBC, 0xDE, 0xF0,
+	///     0x0F, 0xED, 0xCB, 0xA9,
+	///     0x87, 0x65, 0x43, 0x21
+	/// ];
+	/// assert_eq!(buf.read_u128_le()?, 0x2143_6587_A9CB_ED0F_F0DE_BC9A_7856_3412);
+	/// # Ok::<_, Error>(())
+	/// ```
 	fn read_u128_le(&mut self) -> Result<u128> { self.read_int_le() }
 	/// Reads a little-endian [`i128`].
 	///
@@ -231,6 +545,22 @@ pub trait DataSource {
 	///
 	/// Returns [`Error::End`] if the stream ends before exactly `16` bytes can be
 	/// read.
+	///
+	/// # Example
+	///
+	/// ```
+	/// # use data_streams::Error;
+	/// use data_streams::DataSource;
+	///
+	/// let mut buf: &[u8] = &[
+	///     0x12, 0x34, 0x56, 0x78,
+	///     0x9A, 0xBC, 0xDE, 0xF0,
+	///     0x0F, 0xED, 0xCB, 0xA9,
+	///     0x87, 0x65, 0x43, 0x21
+	/// ];
+	/// assert_eq!(buf.read_i128_le()?, 0x2143_6587_A9CB_ED0F_F0DE_BC9A_7856_3412);
+	/// # Ok::<_, Error>(())
+	/// ```
 	fn read_i128_le(&mut self) -> Result<i128> { self.read_int_le() }
 	/// Reads a big-endian [`usize`]. To make streams consistent across platforms,
 	/// [`usize`] is fixed to the size of [`u64`] regardless of the target platform.
@@ -239,6 +569,20 @@ pub trait DataSource {
 	///
 	/// Returns [`Error::End`] if the stream ends before exactly `8` bytes can be
 	/// read.
+	///
+	/// # Example
+	///
+	/// ```
+	/// # use data_streams::Error;
+	/// use data_streams::DataSource;
+	///
+	/// let mut buf: &[u8] = &[
+	///     0x12, 0x34, 0x56, 0x78,
+	///     0x9A, 0xBC, 0xDE, 0xF0
+	/// ];
+	/// assert_eq!(buf.read_usize()?, 0x1234_5678_9ABC_DEF0);
+	/// # Ok::<_, Error>(())
+	/// ```
 	fn read_usize(&mut self) -> Result<usize> {
 		self.read_u64().map(|i| i as usize)
 	}
@@ -249,6 +593,20 @@ pub trait DataSource {
 	///
 	/// Returns [`Error::End`] if the stream ends before exactly `8` bytes can be
 	/// read.
+	///
+	/// # Example
+	///
+	/// ```
+	/// # use data_streams::Error;
+	/// use data_streams::DataSource;
+	///
+	/// let mut buf: &[u8] = &[
+	///     0x12, 0x34, 0x56, 0x78,
+	///     0x9A, 0xBC, 0xDE, 0xF0
+	/// ];
+	/// assert_eq!(buf.read_isize()?, 0x1234_5678_9ABC_DEF0);
+	/// # Ok::<_, Error>(())
+	/// ```
 	fn read_isize(&mut self) -> Result<isize> {
 		self.read_i64().map(|i| i as isize)
 	}
@@ -259,6 +617,20 @@ pub trait DataSource {
 	///
 	/// Returns [`Error::End`] if the stream ends before exactly `8` bytes can be
 	/// read.
+	///
+	/// # Example
+	///
+	/// ```
+	/// # use data_streams::Error;
+	/// use data_streams::DataSource;
+	///
+	/// let mut buf: &[u8] = &[
+	///     0x12, 0x34, 0x56, 0x78,
+	///     0x9A, 0xBC, 0xDE, 0xF0
+	/// ];
+	/// assert_eq!(buf.read_usize_le()?, 0xF0DE_BC9A_7856_3412);
+	/// # Ok::<_, Error>(())
+	/// ```
 	fn read_usize_le(&mut self) -> Result<usize> {
 		self.read_u64_le().map(|i| i as usize)
 	}
@@ -269,6 +641,20 @@ pub trait DataSource {
 	///
 	/// Returns [`Error::End`] if the stream ends before exactly `8` bytes can be
 	/// read.
+	///
+	/// # Example
+	///
+	/// ```
+	/// # use data_streams::Error;
+	/// use data_streams::DataSource;
+	///
+	/// let mut buf: &[u8] = &[
+	///     0x12, 0x34, 0x56, 0x78,
+	///     0x9A, 0xBC, 0xDE, 0xF0
+	/// ];
+	/// assert_eq!(buf.read_isize_le()?, 0xF0DE_BC9A_7856_3412usize as isize);
+	/// # Ok::<_, Error>(())
+	/// ```
 	fn read_isize_le(&mut self) -> Result<isize> {
 		self.read_i64_le().map(|i| i as isize)
 	}
@@ -307,6 +693,19 @@ pub trait DataSource {
 	///
 	/// [`from_utf8_unchecked`]: core::str::from_utf8_unchecked
 	///
+	/// # Example
+	///
+	/// ```
+	/// # use data_streams::Error;
+	/// use data_streams::DataSource;
+	///
+	/// let mut input: &[u8] = "Hello! 👋".as_bytes();
+	/// let buf: &mut [u8] = &mut [0; 11];
+	///
+	/// assert_eq!(input.read_utf8(buf)?, "Hello! 👋");
+	/// # Ok::<_, Error>(())
+	/// ```
+	///
 	/// # Implementation
 	///
 	/// The default implementation uses a very fast UTF-8 validator ([`simdutf8`]),
@@ -329,6 +728,17 @@ pub trait DataSource {
 	///
 	/// Returns [`Error::End`] if the end-of-stream is reached before the full
 	/// character width is read. `buf` is empty or contains exactly one byte.
+	///
+	/// # Example
+	///
+	/// ```
+	/// # use data_streams::Error;
+	/// use data_streams::DataSource;
+	///
+	/// let mut input: &[u8] = "🍉".as_bytes();
+	/// assert_eq!(input.read_utf8_codepoint(&mut [0; 4])?, '🍉');
+	/// # Ok::<_, Error>(())
+	/// ```
 	#[cfg(feature = "utf8")]
 	fn read_utf8_codepoint(&mut self, buf: &mut [u8; 4]) -> Result<char> {
 		Ok(default_read_utf8_codepoint(self, buf)?.parse().unwrap())
@@ -362,6 +772,21 @@ pub trait DataSource {
 	///     Err(error) => return Err(error)
 	/// };
 	/// # assert_eq!(str.as_str(), "hello");
+	/// # Ok::<_, Error>(())
+	/// ```
+	///
+	/// # Example
+	///
+	/// ```
+	/// #![feature(ascii_char)]
+	///
+	/// # use data_streams::Error;
+	/// use data_streams::DataSource;
+	///
+	/// let mut input: &[u8] = b"Hello!";
+	/// let buf: &mut [u8] = &mut [0; 6];
+	/// 
+	/// assert_eq!(input.read_ascii(buf)?.as_str(), "Hello!");
 	/// # Ok::<_, Error>(())
 	/// ```
 	#[cfg(feature = "unstable_ascii_char")]
@@ -399,6 +824,21 @@ pub trait VecSource: DataSource {
 	/// # Errors
 	///
 	/// Returns any IO errors encountered.
+	/// 
+	/// # Example
+	/// 
+	/// ```
+	/// # use data_streams::Error;
+	/// # #[cfg(feature = "unstable_specialization")]
+	/// # {
+	/// use data_streams::VecSource;
+	///
+	/// let mut input: &[u8] = b"Hello!";
+	/// let mut buf = Vec::new();
+	/// assert_eq!(input.read_to_end(&mut buf)?, b"Hello!");
+	/// # }
+	/// # Ok::<_, Error>(())
+	/// ```
 	fn read_to_end<'a>(&mut self, buf: &'a mut alloc::vec::Vec<u8>) -> Result<&'a [u8]> {
 		impls::read_to_end(self, buf, 0)
 	}
@@ -415,6 +855,18 @@ pub trait VecSource: DataSource {
 	/// Returns [`Error::Utf8`] if invalid UTF-8 is read. The stream is left in a
 	/// state with all bytes consumed from it. `buf` contains the read UTF-8 string
 	/// up to the invalid bytes.
+	///
+	/// # Example
+	///
+	/// ```
+	/// # use data_streams::Error;
+	/// use data_streams::VecSource;
+	///
+	/// let mut input: &[u8] = b"Hello!";
+	/// let mut buf = String::new();
+	/// assert_eq!(input.read_utf8_to_end(&mut buf)?, "Hello!");
+	/// # Ok::<_, Error>(())
+	/// ```
 	#[cfg(feature = "utf8")]
 	fn read_utf8_to_end<'a>(&mut self, buf: &'a mut alloc::string::String) -> Result<&'a str> {
 		unsafe {
@@ -432,6 +884,18 @@ pub trait GenericDataSource<T: Pod>: DataSource {
 	///
 	/// Returns [`Error::End`] if the stream ends before exactly the type's size in
 	/// bytes can be read.
+	///
+	/// # Example
+	/// 
+	/// ```
+	/// # use data_streams::Error;
+	/// use data_streams::GenericDataSource;
+	/// 
+	/// let mut buf: &[u8] = &[0x12, 0x34, 0x56, 0x78];
+	/// let int: u32 = buf.read_int()?;
+	/// assert_eq!(int, 0x12345678);
+	/// # Ok::<_, Error>(())
+	/// ```
 	fn read_int(&mut self) -> Result<T> where T: PrimInt {
 		self.read_data().map(T::from_be)
 	}
@@ -442,6 +906,18 @@ pub trait GenericDataSource<T: Pod>: DataSource {
 	///
 	/// Returns [`Error::End`] if the stream ends before exactly the type's size in
 	/// bytes can be read.
+	///
+	/// # Example
+	///
+	/// ```
+	/// # use data_streams::Error;
+	/// use data_streams::GenericDataSource;
+	///
+	/// let mut buf: &[u8] = &[0x12, 0x34, 0x56, 0x78];
+	/// let int: u32 = buf.read_int_le()?;
+	/// assert_eq!(int, 0x78563412);
+	/// # Ok::<_, Error>(())
+	/// ```
 	fn read_int_le(&mut self) -> Result<T> where T: PrimInt {
 		self.read_data().map(T::from_le)
 	}
@@ -453,6 +929,21 @@ pub trait GenericDataSource<T: Pod>: DataSource {
 	///
 	/// Returns [`Error::End`] if the stream ends before exactly the type's size in
 	/// bytes can be read.
+	///
+	/// # Example
+	/// 
+	/// ```
+	/// # use data_streams::Error;
+	/// # #[cfg(target_endian = "little")]
+	/// # {
+	/// use data_streams::GenericDataSource;
+	///
+	/// let mut buf: &[u8] = &[0x12, 0x34, 0x56, 0x78];
+	/// let int: u32 = buf.read_data()?;
+	/// assert_eq!(int, 0x78563412);
+	/// # }
+	/// # Ok::<_, Error>(())
+	/// ```
 	fn read_data(&mut self) -> Result<T> {
 		let mut value = T::zeroed();
 		self.read_exact_bytes(bytes_of_mut(&mut value))?;
@@ -469,10 +960,25 @@ pub trait GenericDataSource<T: Pod>: DataSource {
 	/// # Panics
 	/// 
 	/// Panics if the [`DataSource::read_aligned_bytes`] implementation returns an unaligned slice.
+	///
+	/// # Example
+	///
+	/// ```
+	/// # use data_streams::Error;
+	/// # #[cfg(target_endian = "little")]
+	/// # {
+	/// use data_streams::GenericDataSource;
+	///
+	/// let mut input: &[u8] = &[0x12, 0x34, 0x56, 0x78, 0xFF];
+	/// let buf: &mut [u16] = &mut [0; 3];
+	/// assert_eq!(input.read_data_slice(buf)?, [0x3412, 0x7856]);
+	/// # }
+	/// # Ok::<_, Error>(())
+	/// ```
 	fn read_data_slice<'a>(&mut self, buf: &'a mut [T]) -> Result<&'a [T]> {
 		let bytes = self.read_aligned_bytes(cast_slice_mut(buf), size_of::<T>())?;
 		assert_eq!(bytes.len() % size_of::<T>(), 0, "unaligned read implementation");
-		Ok(cast_slice(buf))
+		Ok(cast_slice(bytes))
 	}
 }
 
@@ -481,12 +987,42 @@ impl<S: DataSource + ?Sized, T: Pod> GenericDataSource<T> for S { }
 /// Accesses a source's internal buffer.
 pub trait BufferAccess: DataSource {
 	/// Returns the capacity of the internal buffer.
+	/// 
+	/// # Example
+	/// 
+	/// ```
+	/// # #[cfg(feature = "alloc")]
+	/// # {
+	/// use data_streams::BufferAccess;
+	///
+	/// let buf = Vec::<u8>::with_capacity(16);
+	/// assert_eq!(buf.buffer_capacity(), 16);
+	/// # }
+	/// ```
 	fn buffer_capacity(&self) -> usize;
 	/// Returns the byte count contained in the internal buffer.
+	/// 
+	/// # Example
+	/// 
+	/// ```
+	/// use data_streams::BufferAccess;
+	/// 
+	/// let buf: &[u8] = &[0; 16];
+	/// assert_eq!(buf.buffer_count(), 16);
+	/// ```
 	fn buffer_count(&self) -> usize { self.buffer().len() }
 	/// Returns a slice over the filled portion of the internal buffer. This slice
 	/// may not contain the whole buffer, for example if it can't be represented as
 	/// just one slice.
+	/// 
+	/// # Example
+	/// 
+	/// ```
+	/// use data_streams::BufferAccess;
+	/// 
+	/// let buf: &[u8] = b"Hello!";
+	/// assert_eq!(buf.buffer(), b"Hello!");
+	/// ```
 	fn buffer(&self) -> &[u8];
 	/// Fills the internal buffer from the underlying stream, returning its contents
 	/// if successful.
@@ -494,8 +1030,41 @@ pub trait BufferAccess: DataSource {
 	/// # Errors
 	/// 
 	/// Returns any IO errors encountered.
+	///
+	/// # Example
+	///
+	/// ```no_run
+	/// # use data_streams::Error;
+	/// # #[cfg(feature = "std")]
+	/// # {
+	/// use std::{fs::File, io::BufReader};
+	/// use data_streams::BufferAccess;
+	/// 
+	/// let mut source = BufReader::new(File::open("file.txt")?);
+	/// source.fill_buffer()?;
+	/// # }
+	/// # Ok::<_, Error>(())
+	/// ```
 	fn fill_buffer(&mut self) -> Result<&[u8]>;
 	/// Clears the internal buffer.
+	/// 
+	/// # Example
+	/// 
+	/// ```no_run
+	/// # use data_streams::Error;
+	/// # #[cfg(feature = "std")]
+	/// # {
+	/// use std::{fs::File, io::BufReader};
+	/// use data_streams::BufferAccess;
+	///
+	/// let mut source = BufReader::new(File::open("file.txt")?);
+	/// source.fill_buffer()?;
+	/// 
+	/// source.clear_buffer();
+	/// assert_eq!(source.buffer_count(), 0);
+	/// # }
+	/// # Ok::<_, Error>(())
+	/// ```
 	fn clear_buffer(&mut self) {
 		self.drain_buffer(self.buffer_count());
 	}
@@ -506,6 +1075,23 @@ pub trait BufferAccess: DataSource {
 	/// # Panics
 	/// 
 	/// This method panics if `count` exceeds the buffer length.
+	///
+	/// # Example
+	///
+	/// ```no_run
+	/// # use data_streams::Error;
+	/// # #[cfg(feature = "std")]
+	/// # {
+	/// use std::{fs::File, io::BufReader};
+	/// use data_streams::BufferAccess;
+	///
+	/// let mut source = BufReader::new(File::open("file.txt")?);
+	/// source.fill_buffer()?;
+	///
+	/// source.drain_buffer(512);
+	/// # }
+	/// # Ok::<_, Error>(())
+	/// ```
 	fn drain_buffer(&mut self, count: usize);
 	/// Bypasses the internal buffer by returning the underlying source, or `self`
 	/// if this behavior is not supported. Note that not fully draining the buffer
