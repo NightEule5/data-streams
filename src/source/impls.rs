@@ -10,8 +10,11 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use super::{DataSource, markers::SourceSize, Result};
 
+#[allow(clippy::impl_trait_in_params, reason = "this function is not public")]
 #[cfg(feature = "utf8")]
 pub fn buf_read_utf8_to_end<'a>(source: &mut impl BufferAccess, buf: &'a mut String) -> Result<&'a str> {
+	// Safety: this function only modifies the string's bytes if the new bytes are found to be
+	//  valid UTF-8.
 	unsafe {
 		super::append_utf8(buf, |buf|
 			buf_read_to_end(source, buf).map(<[u8]>::len)
@@ -19,6 +22,7 @@ pub fn buf_read_utf8_to_end<'a>(source: &mut impl BufferAccess, buf: &'a mut Str
 	}
 }
 
+#[allow(clippy::impl_trait_in_params, reason = "this function is not public")]
 pub fn buf_read_to_end<'a>(source: &mut impl BufferAccess, buf: &'a mut Vec<u8>) -> Result<&'a [u8]> {
 	let start = buf.len();
 	// Drain then bypass the buffer. We'll use the vector as a buffer instead.
@@ -36,6 +40,7 @@ pub fn buf_read_to_end<'a>(source: &mut impl BufferAccess, buf: &'a mut Vec<u8>)
 }
 
 // Reimplementation of std::io::default_read_to_end
+#[allow(clippy::impl_trait_in_params, reason = "this function is not public")]
 pub fn read_to_end<'a>(source: &mut (impl DataSource + ?Sized), buf: &'a mut Vec<u8>, min_chunk_size: u64) -> Result<&'a [u8]> {
 	trait SizeHint {
 		fn size_hint(&self) -> Option<u64>;
@@ -87,9 +92,9 @@ pub fn read_to_end<'a>(source: &mut (impl DataSource + ?Sized), buf: &'a mut Vec
 		spare = &mut spare[..buf_len];
 
 		spare[initialized..].fill(MaybeUninit::new(0));
+		// Safety: all uninitialized bytes have been initialized above, and
+		// MaybeUninit<u8> has the same layout as u8.
 		let spare_init = unsafe {
-			// Safety: all uninitialized bytes have been initialized above, and
-			// MaybeUninit<u8> has the same layout as u8.
 			&mut *(core::ptr::from_mut::<[MaybeUninit<u8>]>(spare) as *mut [u8]) // Stable slice_assume_init_ref
 		};
 

@@ -16,7 +16,10 @@ use crate::{
 use crate::markers::source::{InfiniteSource, SourceSize};
 
 #[cfg(any(unix, windows, target_os = "wasi"))]
+// Safety: the size is read from the file system metadata.
 unsafe impl SourceSize for &std::fs::File {
+	// Todo: lower bound?
+	
 	fn upper_bound(&self) -> Option<u64> {
 		#[cfg(unix)]
 		let size = std::os::unix::fs::MetadataExt::size;
@@ -34,6 +37,7 @@ unsafe impl SourceSize for &std::fs::File {
 }
 
 #[cfg(any(unix, windows, target_os = "wasi"))]
+// Safety: the size is read from the file system metadata.
 unsafe impl SourceSize for std::fs::File {
 	fn upper_bound(&self) -> Option<u64> {
 		(&self).upper_bound()
@@ -76,7 +80,10 @@ impl<R: Read + ?Sized> BufferAccess for BufReader<R> {
 	}
 }
 
+// Safety: the bounds are correct if those returned by `R` are correct.
 unsafe impl<R: Read + SourceSize + ?Sized> SourceSize for BufReader<R> {
+	// Todo: include buffer size?
+	
 	fn lower_bound(&self) -> u64 {
 		self.get_ref().lower_bound()
 	}
@@ -141,6 +148,7 @@ impl<T: AsRef<[u8]>> BufferAccess for Cursor<T> {
 	}
 }
 
+// Safety: the size is the buffer count.
 unsafe impl<T: AsRef<[u8]>> SourceSize for Cursor<T> {
 	fn lower_bound(&self) -> u64 { self.buffer_count() as u64 }
 	fn upper_bound(&self) -> Option<u64> { Some(self.buffer_count() as u64) }
@@ -208,6 +216,8 @@ impl<T: BufferAccess + BufRead> BufferAccess for Take<T> {
 	}
 }
 
+// Safety: the upper bound is correct if `Take` behaves correctly (produces no more bytes than its
+//  limit).
 unsafe impl<T> SourceSize for Take<T> {
 	fn upper_bound(&self) -> Option<u64> {
 		Some(self.limit())
@@ -251,9 +261,11 @@ impl DataSource for Empty {
 }
 }
 
+// Safety: `Empty` produces no bytes by definition.
 unsafe impl SourceSize for Empty {
 	fn upper_bound(&self) -> Option<u64> { Some(0) }
 }
+// Safety: `Empty` produces no bytes by definition.
 unsafe impl SourceSize for &Empty {
 	fn upper_bound(&self) -> Option<u64> { Some(0) }
 }
@@ -284,38 +296,50 @@ impl DataSource for Repeat {
 	}
 
 	fn read_bytes<'a>(&mut self, buf: &'a mut [u8]) -> Result<&'a [u8]> {
-		Read::read(self, buf).unwrap(); // Repeat doesn't return an error
+		// Safety: Repeat doesn't return an error.
+		unsafe {
+			Read::read(self, buf).unwrap_unchecked();
+		}
 		Ok(buf)
 	}
 
 	#[cfg(feature = "utf8")]
 	fn read_utf8<'a>(&mut self, buf: &'a mut [u8]) -> Result<&'a str> {
-		match self.read_bytes(buf).unwrap() {
+		// Safety: Repeat doesn't return an error.
+		match unsafe { self.read_bytes(buf).unwrap_unchecked() } {
 			[] => Ok(""),
-			bytes @ [byte, ..] if byte.is_ascii() => Ok(unsafe {
+			bytes @ [byte, ..] if byte.is_ascii() => Ok(
 				// Safety: the byte is valid ASCII, which is valid UTF-8.
-				core::str::from_utf8_unchecked(bytes)
-			}),
+				unsafe {
+					core::str::from_utf8_unchecked(bytes)
+				}
+			),
 			bytes =>
 				// Use from_utf8 to convert the byte into a UTF-8 error.
-				// Unwrap is safe because non-ASCII bytes are not valid UTF-8.
-				Err(simdutf8::compat::from_utf8(&bytes[..1]).unwrap_err().into())
+				// Safety: Unwrap is safe because non-ASCII bytes are not valid UTF-8.
+				Err(unsafe {
+					simdutf8::compat::from_utf8(&bytes[..1]).unwrap_err_unchecked().into()
+				})
 		}
 	}
 
 	#[cfg(feature = "unstable_ascii_char")]
 	fn read_ascii<'a>(&mut self, buf: &'a mut [u8]) -> Result<&'a [core::ascii::Char]> {
-		match self.read_bytes(buf).unwrap() {
+		// Safety: Repeat doesn't return an error.
+		match unsafe { self.read_bytes(buf).unwrap_unchecked() } {
 			[] => Ok(&[]),
-			bytes @ [byte, ..] if byte.is_ascii() => Ok(unsafe {
+			bytes @ [byte, ..] if byte.is_ascii() => Ok(
 				// Safety: the byte is valid ASCII.
-				bytes.as_ascii_unchecked()
-			}),
+				unsafe {
+					bytes.as_ascii_unchecked()
+				}
+			),
 			bytes @ &[byte, ..] => Err(Error::invalid_ascii(byte, 0, bytes.len()))
 		}
 	}
 }
 
+// Safety: the source repeats one byte forever.
 unsafe impl InfiniteSource for Repeat { }
 
 fn buf_read_skip(source: &mut (impl BufferAccess + ?Sized), count: usize) -> usize {
@@ -357,6 +381,8 @@ fn buf_read_exact_bytes<'a>(source: &mut (impl Read + ?Sized), buf: &'a mut [u8]
 #[cfg(all(feature = "alloc", feature = "utf8"))]
 #[allow(dead_code)]
 fn buf_read_utf8_to_end<'a>(source: &mut (impl Read + ?Sized), buf: &'a mut String) -> Result<&'a str> {
+	// Safety: this function only modifies the string's bytes if the new bytes are found to be
+	//  valid UTF-8.
 	unsafe {
 		crate::source::append_utf8(buf, |b|
 			Ok(source.read_to_end(b)?)

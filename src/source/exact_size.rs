@@ -121,6 +121,7 @@ impl BufferAccess for &[u8] {
 	fn drain_buffer(&mut self, count: usize) { self.consume(count); }
 }
 
+// Safety: slices produce exactly the number of bytes as their length.
 unsafe impl SourceSize for &[u8] {
 	fn lower_bound(&self) -> u64 { self.len() as u64 }
 	fn upper_bound(&self) -> Option<u64> { Some(self.len() as u64) }
@@ -149,6 +150,7 @@ impl BufferAccess for alloc::vec::Vec<u8> {
 }
 
 #[cfg(feature = "alloc")]
+// Safety: vectors produce exactly the number of bytes as their length.
 unsafe impl SourceSize for alloc::vec::Vec<u8> {
 	fn lower_bound(&self) -> u64 { self.len() as u64 }
 	fn upper_bound(&self) -> Option<u64> { Some(self.len() as u64) }

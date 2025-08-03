@@ -27,4 +27,5 @@ pub unsafe trait SourceSize {
 	fn upper_bound(&self) -> Option<u64> { None }
 }
 
+// Safety: infinite sources produce at least zero bytes and have no upper bound, by definition.
 unsafe impl<T: InfiniteSource> SourceSize for T { }

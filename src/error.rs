@@ -51,10 +51,11 @@ pub enum Error {
 
 impl Error {
 	/// Creates an ASCII error.
+	#[allow(clippy::missing_panics_doc)]
 	#[inline]
 	#[cfg(feature = "unstable_ascii_char")]
 	pub const fn invalid_ascii(invalid_byte: u8, valid_up_to: usize, consumed_count: usize) -> Self {
-		assert!(consumed_count >= valid_up_to);
+		assert!(consumed_count >= valid_up_to, "at least `valid_up_to` bytes must be consumed");
 		Self::Ascii(AsciiError { invalid_byte, valid_up_to, consumed_count })
 	}
 	/// Creates an overflow error.
@@ -74,6 +75,7 @@ impl Error {
 	}
 }
 
+#[allow(clippy::std_instead_of_core, reason = "Error trait in core is not yet stable")]
 #[cfg(feature = "std")]
 impl std::error::Error for Error {
 	fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
@@ -162,6 +164,7 @@ pub struct Utf8Error {
 }
 
 /// A kind of UTF-8 error.
+#[allow(clippy::exhaustive_enums)]
 #[cfg(feature = "utf8")]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Utf8ErrorKind {
@@ -206,12 +209,14 @@ impl Utf8Error {
 	#[must_use]
 	pub fn error_kind(&self) -> Utf8ErrorKind {
 		match self.inner.error_len() {
-			Some(len) => Utf8ErrorKind::InvalidBytes(unsafe {
+			Some(len) => Utf8ErrorKind::InvalidBytes(
 				// Safety: core::str::from_utf8 (used by simdutf8 to get the error)
 				// never returns an error_len outside the range 1..=3, so the cast
 				// never truncates and conversion to non-zero is safe.
-				NonZeroU8::new_unchecked(len as u8)
-			}),
+				unsafe {
+					NonZeroU8::new_unchecked(len as u8)
+				}
+			),
 			None => Utf8ErrorKind::IncompleteChar
 		}
 	}
@@ -272,6 +277,7 @@ impl Utf8Error {
 	}
 }
 
+#[allow(clippy::std_instead_of_core, reason = "Error trait in core is not yet stable")]
 #[cfg(all(feature = "std", feature = "utf8"))]
 impl std::error::Error for Utf8Error {
 	fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
@@ -338,10 +344,10 @@ impl AsciiError {
 	/// the error.
 	#[must_use]
 	pub fn valid_slice<'a>(&self, bytes: &'a [u8]) -> &'a [ascii::Char] {
-		assert!(bytes.len() >= self.valid_up_to);
-		assert!(bytes[..self.valid_up_to].is_ascii());
+		assert!(bytes.len() >= self.valid_up_to, "the slice must contain at least `valid_up_to` bytes");
+		assert!(bytes[..self.valid_up_to].is_ascii(), "the valid slice must be ASCII");
+		// Safety: the invariants were checked by the above assertions.
 		unsafe {
-			// Safety: the invariants were checked by the above assertions.
 			self.valid_slice_unchecked(bytes)
 		}
 	}
@@ -368,11 +374,11 @@ impl AsciiError {
 	/// the error, or if shorter than the consumed count.
 	#[must_use]
 	pub fn split_valid<'a>(&self, bytes: &'a [u8]) -> (&'a [ascii::Char], &'a [u8]) {
-		assert!(self.consumed_count >= self.valid_up_to);
-		assert!(bytes.len() >= self.consumed_count);
-		assert!(bytes[..self.valid_up_to].is_ascii());
+		assert!(self.consumed_count >= self.valid_up_to, "at least `valid_up_to` bytes must be consumed");
+		assert!(bytes.len() >= self.consumed_count, "the slice length must be longer than the consumed count");
+		assert!(bytes[..self.valid_up_to].is_ascii(), "the valid slice must be ASCII");
+		// Safety: the invariants were checked by the above assertions.
 		unsafe {
-			// Safety: the invariants were checked by the above assertions.
 			self.split_valid_unchecked(bytes)
 		}
 	}
@@ -394,6 +400,7 @@ impl AsciiError {
 	}
 }
 
+#[allow(clippy::std_instead_of_core, reason = "Error trait in core is not yet stable")]
 #[cfg(all(feature = "std", feature = "unstable_ascii_char"))]
 impl std::error::Error for AsciiError { }
 

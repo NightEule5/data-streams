@@ -122,7 +122,12 @@ impl DataSource for VecDeque<u8> {
 
 						self.rotate_right(incomplete);
 						(a, b) = self.as_slices();
-						assert_eq!(a.len(), char_start);
+						assert_eq!(
+							a.len(),
+							char_start,
+							"`rotate_right` should have caused the first slice to contain the valid \
+							UTF-8 characters"
+						);
 						char_start
 					}
 					Err(error @ Error::Utf8(_)) =>
@@ -136,9 +141,8 @@ impl DataSource for VecDeque<u8> {
 					Ok(str) => {
 						let valid = offset + str.len();
 						self.drain_buffer(valid);
+						// Safety: these bytes have been validated as UTF-8 up this point.
 						Ok(unsafe {
-							// Safety: these bytes have been validated as UTF-8 up
-							// this point.
 							core::str::from_utf8_unchecked(&buf[..valid])
 						})
 					}
@@ -229,17 +233,21 @@ impl VecSource for VecDeque<u8> {
 	fn read_utf8_to_end<'a>(&mut self, buf: &'a mut alloc::string::String) -> Result<&'a str> {
 		let start_len = buf.len();
 		buf.try_reserve(self.len())?;
-		unsafe {
+		{
 			// Safety: the existing contents are not changed, and when this block
 			// ends the buffer will have been checked as valid UTF-8.
-			let buf = buf.as_mut_vec();
+			let buf = unsafe {
+				buf.as_mut_vec()
+			};
 			
 			let slice = {
 				let spare = &mut buf.spare_capacity_mut()[..self.len()];
 				spare.fill(MaybeUninit::new(0));
 				// Safety: read_utf8 does not read from the buffer, and the returned
 				// slice is guaranteed to be initialized.
-				&mut *(core::ptr::from_mut::<[MaybeUninit<u8>]>(spare) as *mut [u8])
+				unsafe {
+					&mut *(core::ptr::from_mut::<[MaybeUninit<u8>]>(spare) as *mut [u8])
+				}
 			};
 			
 			let result = self.read_utf8(slice);
@@ -249,13 +257,16 @@ impl VecSource for VecDeque<u8> {
 				Err(_) => unreachable!() // read_utf8 only returns Error::Utf8.
 			};
 			// Safety: these bytes are initialized and valid UTF-8.
-			buf.set_len(start_len + valid_len);
+			unsafe {
+				buf.set_len(start_len + valid_len);
+			}
 		}
 		self.clear();
 		Ok(&buf[start_len..])
 	}
 }
 
+// Safety: vectors produce exactly the number of bytes as their length.
 unsafe impl SourceSize for VecDeque<u8> {
 	fn lower_bound(&self) -> u64 { self.len() as u64 }
 	fn upper_bound(&self) -> Option<u64> { Some(self.len() as u64) }
