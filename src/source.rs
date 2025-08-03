@@ -741,7 +741,11 @@ pub trait DataSource {
 	/// ```
 	#[cfg(feature = "utf8")]
 	fn read_utf8_codepoint(&mut self, buf: &mut [u8; 4]) -> Result<char> {
-		Ok(default_read_utf8_codepoint(self, buf)?.parse().unwrap())
+		let Ok(char) = default_read_utf8_codepoint(self, buf)?.parse() else {
+			// Safety: this function promises to produce a UTF-8 string with exactly one character.
+			unreachable!()
+		};
+		Ok(char)
 	}
 	/// Reads bytes into a slice, returning them as an ASCII slice if valid.
 	///
@@ -869,6 +873,8 @@ pub trait VecSource: DataSource {
 	/// ```
 	#[cfg(feature = "utf8")]
 	fn read_utf8_to_end<'a>(&mut self, buf: &'a mut alloc::string::String) -> Result<&'a str> {
+		// Safety: this function only modifies the string's bytes if the new bytes are found to be
+		//  valid UTF-8.
 		unsafe {
 			append_utf8(buf, |buf| impls::read_to_end(self, buf, 0).map(<[u8]>::len))
 		}
@@ -1198,7 +1204,8 @@ impl<T: BufferAccess + ?Sized> DataSource for T {
 			},
 			[] => default_read_utf8_codepoint(self, buf)?
 		};
-		Ok(str.parse().unwrap())
+		
+		Ok(str.parse().expect("bytes read by `read_utf8` must be valid UTF-8 codepoints"))
 	}
 
 	#[cfg(feature = "unstable_ascii_char")]
@@ -1251,7 +1258,11 @@ pub(crate) fn default_skip(source: &mut (impl BufferAccess + ?Sized), mut count:
 	source.drain_buffer(count);
 	// Guard against faulty implementations by verifying that the buffered
 	// bytes were removed.
-	assert_eq!(source.available(), avail.saturating_sub(count));
+	assert_eq!(
+		source.available(),
+		avail.saturating_sub(count),
+		"`drain_buffer` must remove buffered bytes"
+	);
 	avail
 }
 
@@ -1275,6 +1286,7 @@ fn try_read_exact_contiguous<'a>(source: &mut (impl DataSource + ?Sized), buf: &
 	Ok(bytes)
 }
 
+#[allow(clippy::panic, reason = "can't use assert here")]
 fn try_read_exact_discontiguous<'a>(
 	source: &mut (impl DataSource + ?Sized),
 	buf: &'a mut [u8],
@@ -1384,13 +1396,15 @@ fn buf_read_bytes<'a>(
 }
 
 #[cfg(all(feature = "alloc", feature = "utf8"))]
-#[allow(dead_code)]
+#[allow(dead_code, clippy::multiple_unsafe_ops_per_block)]
 pub(crate) fn default_read_utf8<'a>(
 	source: &mut (impl DataSource + ?Sized),
 	count: usize,
 	buf: &'a mut alloc::string::String
 ) -> Result<&'a str> {
 	buf.reserve(count);
+	// Safety: this function only modifies the string's bytes if the new bytes are found to be
+	//  valid UTF-8.
 	unsafe {
 		append_utf8(buf, |b| {
 			let len = b.len();
@@ -1449,6 +1463,7 @@ where
 
 	impl Drop for Guard<'_> {
 		fn drop(&mut self) {
+			// Safety: exactly `len` bytes have been written.
 			unsafe {
 				self.buf.set_len(self.len);
 			}

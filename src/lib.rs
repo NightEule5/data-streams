@@ -84,12 +84,41 @@
 #![cfg_attr(test, feature(assert_matches))]
 #![allow(incomplete_features)]
 
-#![deny(clippy::pedantic)]
-#![allow(
-	clippy::cast_sign_loss, // I know
-	clippy::cast_possible_truncation, // Yes, and?
-	clippy::module_name_repetitions,
-	clippy::must_use_candidate,
+#![deny(
+	clippy::alloc_instead_of_core,
+	clippy::as_pointer_underscore,
+	clippy::as_underscore,
+	clippy::assertions_on_result_states,
+	clippy::cfg_not_test,
+	clippy::clone_on_ref_ptr,
+	clippy::decimal_literal_representation,
+	clippy::deref_by_slicing,
+	clippy::else_if_without_else,
+	clippy::empty_drop,
+	clippy::empty_enum_variants_with_brackets,
+	clippy::empty_structs_with_brackets,
+	clippy::exhaustive_enums,
+	clippy::field_scoped_visibility_modifiers,
+	clippy::if_then_some_else_none,
+	clippy::impl_trait_in_params,
+	clippy::infinite_loop,
+	clippy::map_err_ignore,
+	clippy::mem_forget,
+	clippy::missing_assert_message,
+	clippy::missing_errors_doc,
+	clippy::missing_panics_doc,
+	clippy::missing_safety_doc,
+	clippy::multiple_unsafe_ops_per_block,
+	clippy::panic,
+	clippy::partial_pub_fields,
+	clippy::redundant_type_annotations,
+	clippy::ref_patterns,
+	clippy::renamed_function_params,
+	clippy::semicolon_inside_block,
+	clippy::std_instead_of_alloc,
+	clippy::std_instead_of_core,
+	clippy::undocumented_unsafe_blocks,
+	clippy::unwrap_used,
 )]
 
 #[cfg(feature = "alloc")]
