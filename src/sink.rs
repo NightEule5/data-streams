@@ -702,7 +702,7 @@ pub trait DataSink {
 }
 
 /// Writes generic data to a [sink](DataSink).
-pub trait GenericDataSink<T: Pod>: DataSink {
+pub trait GenericDataSink: DataSink {
 	/// Writes a big-endian integer.
 	///
 	/// # Errors
@@ -727,7 +727,7 @@ pub trait GenericDataSink<T: Pod>: DataSink {
 	/// # }
 	/// # Ok::<_, Error>(())
 	/// ```
-	fn write_int(&mut self, value: T) -> Result where T: PrimInt {
+	fn write_int<T: Pod + PrimInt>(&mut self, value: T) -> Result {
 		self.write_data(value.to_be())
 	}
 	/// Writes a little-endian integer.
@@ -754,7 +754,7 @@ pub trait GenericDataSink<T: Pod>: DataSink {
 	/// # }
 	/// # Ok::<_, Error>(())
 	/// ```
-	fn write_int_le(&mut self, value: T) -> Result where T: PrimInt {
+	fn write_int_le<T: Pod + PrimInt>(&mut self, value: T) -> Result {
 		self.write_data(value.to_le())
 	}
 	/// Writes a value of an arbitrary bit pattern. See [`Pod`].
@@ -781,12 +781,12 @@ pub trait GenericDataSink<T: Pod>: DataSink {
 	/// # }
 	/// # Ok::<_, Error>(())
 	/// ```
-	fn write_data(&mut self, value: T) -> Result {
+	fn write_data<T: Pod>(&mut self, value: T) -> Result {
 		self.write_bytes(bytes_of(&value))
 	}
 }
 
-impl<S: DataSink + ?Sized, T: Pod> GenericDataSink<T> for S { }
+impl<S: DataSink + ?Sized> GenericDataSink for S { }
 
 /// A sink stream of vector data.
 #[cfg(feature = "alloc")]

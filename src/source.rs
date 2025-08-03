@@ -883,7 +883,7 @@ pub trait VecSource: DataSource {
 }
 
 /// Reads generic data from a [source](DataSource).
-pub trait GenericDataSource<T: Pod>: DataSource {
+pub trait GenericDataSource: DataSource {
 	/// Reads a big-endian integer.
 	///
 	/// # Errors
@@ -902,7 +902,7 @@ pub trait GenericDataSource<T: Pod>: DataSource {
 	/// assert_eq!(int, 0x12345678);
 	/// # Ok::<_, Error>(())
 	/// ```
-	fn read_int(&mut self) -> Result<T> where T: PrimInt {
+	fn read_int<T: Pod + PrimInt>(&mut self) -> Result<T> {
 		self.read_data().map(T::from_be)
 	}
 
@@ -924,7 +924,7 @@ pub trait GenericDataSource<T: Pod>: DataSource {
 	/// assert_eq!(int, 0x78563412);
 	/// # Ok::<_, Error>(())
 	/// ```
-	fn read_int_le(&mut self) -> Result<T> where T: PrimInt {
+	fn read_int_le<T: Pod + PrimInt>(&mut self) -> Result<T> {
 		self.read_data().map(T::from_le)
 	}
 
@@ -950,7 +950,7 @@ pub trait GenericDataSource<T: Pod>: DataSource {
 	/// # }
 	/// # Ok::<_, Error>(())
 	/// ```
-	fn read_data(&mut self) -> Result<T> {
+	fn read_data<T: Pod>(&mut self) -> Result<T> {
 		let mut value = T::zeroed();
 		self.read_exact_bytes(bytes_of_mut(&mut value))?;
 		Ok(value)
@@ -981,14 +981,14 @@ pub trait GenericDataSource<T: Pod>: DataSource {
 	/// # }
 	/// # Ok::<_, Error>(())
 	/// ```
-	fn read_data_slice<'a>(&mut self, buf: &'a mut [T]) -> Result<&'a [T]> {
+	fn read_data_slice<'a, T: Pod>(&mut self, buf: &'a mut [T]) -> Result<&'a [T]> {
 		let bytes = self.read_aligned_bytes(cast_slice_mut(buf), size_of::<T>())?;
 		assert_eq!(bytes.len() % size_of::<T>(), 0, "unaligned read implementation");
 		Ok(cast_slice(bytes))
 	}
 }
 
-impl<S: DataSource + ?Sized, T: Pod> GenericDataSource<T> for S { }
+impl<S: DataSource + ?Sized> GenericDataSource for S { }
 
 /// Accesses a source's internal buffer.
 pub trait BufferAccess: DataSource {
